@@ -6,6 +6,8 @@ import unicodedata
 from dash import Dash, dash_table, dcc, html, Input, Output, ALL, MATCH
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
+import xml.etree.ElementTree as ET
+import xml.dom.minidom
 
 FIELDS = {
     "PlayerUniqueId": "Id",
@@ -106,6 +108,14 @@ app.layout = dbc.Container([
 
 
 @app.callback(
+    Output("table", "row_deletable"),
+    Input("table", "data"),
+)
+def row_deletable(data):
+    return len(data) > 1
+
+
+@app.callback(
     Output("table", "data", allow_duplicate=True),
     Input("table", "data"),
     prevent_initial_call=True,
@@ -114,6 +124,7 @@ def change_data(data):
     if not data:
         raise PreventUpdate
 
+    data = [row for row in data if row.get("Name", None)]
     for i, row in enumerate(data):
         row["PlayerUniqueId"] = i + 1
         if row.get("Name", None):
@@ -124,8 +135,9 @@ def change_data(data):
                 row["Lastname"], row["Firstname"] = "", name[0]
             else:
                 row["Lastname"], row["Firstname"] = name[0], " ".join(name[1:])
+        else:
+            row["Lastname"], row["Firstname"] = "", ""
 
-    data = [row for row in data if row.get("Firstname", None)]
     if not data:
         data = [{"": 1}]
 
@@ -142,6 +154,7 @@ def clear_column(selected_col):
 
 @app.callback(
     Output("table", "data", allow_duplicate=True),
+    Output("table", "selected_columns"),
     Input("clear_column", "n_clicks"),
     Input("table", "derived_viewport_selected_columns"),
     Input("table", "data"),
@@ -156,7 +169,7 @@ def clear_column(n_clicks, selected_col, data):
             for row in data:
                 row[col] = ""
 
-        return data
+        return data, []
 
     raise PreventUpdate
 
@@ -164,10 +177,30 @@ def clear_column(n_clicks, selected_col, data):
 @app.callback(
     Output("download-text", "data"),
     Input("generate", "n_clicks"),
+    Input("table", "data"),
     prevent_initial_call=True,
 )
-def download_text(n_clicks):
-    return dict(content="Hello, World!", filename="hello.txt")
+def download_text(n_clicks, data):
+    if dash.ctx.triggered_id != "generate":
+        raise PreventUpdate
+
+    root = ET.Element('Players')
+    for row in data:
+        player = ET.SubElement(root, 'Player')
+        for k, v in row.items():
+            if not v or not k or k == "Name":
+                continue
+            player.set(k, str(v))
+
+    tree = ET.ElementTree(root)
+    result_str = ET.tostring(tree.getroot(), encoding="utf8").decode("utf8")
+
+    print(result_str)
+
+    dom = xml.dom.minidom.parseString(result_str)
+    pretty_xml_as_string = dom.toprettyxml()
+
+    return dict(content=pretty_xml_as_string, filename="output.xml")
 
 
 if __name__ == '__main__':
