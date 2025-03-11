@@ -9,6 +9,9 @@
           <mappings>
             <mapping deploy="\" local="$PROJECT_DIR$" web="/" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path=".venv" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>
