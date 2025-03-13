@@ -2,7 +2,7 @@ import dash
 
 
 def table(**kwargs):
-    return dash.dash_table.DataTable(
+    default_kwargs = dict(
         id="table",
         editable=True,
         filter_action="none",
@@ -28,6 +28,12 @@ def table(**kwargs):
             "fontWeight": "bold",
             "padding": "10px 0px",
         },
+        style_header_conditional=[
+            {
+                "if": {"column_editable": False},
+                "color": "rgba(0, 0, 0, 0.5)",
+            }
+        ],
         style_data_conditional=[
             {
                 "if": {"state": "active"},
@@ -37,5 +43,11 @@ def table(**kwargs):
                 "opacity": 0.7,
             }
         ],
-        **kwargs
+        style_table={
+            "overflow": "scroll",
+        },
+    )
+
+    return dash.dash_table.DataTable(
+        **(default_kwargs | kwargs)
     )

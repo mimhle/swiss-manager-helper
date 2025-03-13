@@ -6,7 +6,7 @@ import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 import unicodedata
-from dash import Output, Input, ALL
+from dash import Output, Input, ALL, MATCH, State
 from dash.exceptions import PreventUpdate
 
 from components.table import table
@@ -18,8 +18,12 @@ FIELDS = {
     "Firstname": "First Name",
     "Gender": "Gender",
     "Group": "Group",
+    "Rating": "Rating",
+    "Title": "Title",
     "Federation": "Federation",
+    "FIDEId": "FIDE Id",
     "Club": "Club",
+    "TeamUniqueId": "Team Id",
 }
 
 df = pd.DataFrame({
@@ -64,7 +68,7 @@ def row_deletable(data):
     Output("table", "data", allow_duplicate=True),
     Output("generate_menu", "children"),
     Input("table", "data"),
-    Input("generate_menu", "children"),
+    State("generate_menu", "children"),
     prevent_initial_call=True,
 )
 def change_data(data, children):
@@ -96,29 +100,17 @@ def change_data(data, children):
         data.append({k: "" for k in FIELDS.keys()})
 
     return data, [children[0], *[dbc.DropdownMenuItem(
-        f"Generate group {name}", id={"type": f"generate_group", "index": name}, n_clicks=0, className="me-1"
+        f"Generate group {name}", id={"type": f"generate_group", "index": name}, n_clicks=0, className="me-1", key=name
     ) for name in group]]
 
 
-@dash.callback(
-    Input({"type": "generate_group", "index": ALL}, "n_clicks"),
-)
-def generate_group(n_clicks):
-    print(n_clicks)
-
-
-@dash.callback(
-    Output("download-text", "data"),
-    Input("generate_all", "n_clicks"),
-    Input("table", "data"),
-    prevent_initial_call=True,
-)
-def download_text(n_clicks, data):
-    if dash.ctx.triggered_id != "generate_all":
-        raise PreventUpdate
-
+def generate_xml(data, group=None):
     root = ET.Element('Players')
     for row in data:
+        if group:
+            if row.get("Group", None) != group:
+                continue
+
         player = ET.SubElement(root, 'Player')
         for k, v in row.items():
             if not v or not k or k == "Name":
@@ -128,9 +120,40 @@ def download_text(n_clicks, data):
     tree = ET.ElementTree(root)
     result_str = ET.tostring(tree.getroot(), encoding="utf8").decode("utf8")
 
-    print(result_str)
-
     dom = xml.dom.minidom.parseString(result_str)
     pretty_xml_as_string = dom.toprettyxml()
+
+    return pretty_xml_as_string
+
+
+@dash.callback(
+    Output("download-text", "data", allow_duplicate=True),
+    Output({'type': 'generate_group', 'index': ALL}, 'n_clicks'),
+    Input({'type': 'generate_group', 'index': ALL}, 'n_clicks'),
+    Input("table", "data"),
+    prevent_initial_call=True,
+)
+def generate_group(n_clicks, data):
+    print(dash.ctx.triggered_id)
+
+    if dash.ctx.triggered_id == "table":
+        raise PreventUpdate
+
+    pretty_xml_as_string = generate_xml(data, group=dash.ctx.triggered_id["index"])
+
+    return dict(content=pretty_xml_as_string, filename=f"{dash.ctx.triggered_id['index']}.xml"), n_clicks
+
+
+@dash.callback(
+    Output("download-text", "data", allow_duplicate=True),
+    Input("generate_all", "n_clicks"),
+    Input("table", "data"),
+    prevent_initial_call=True,
+)
+def download_text(n_clicks, data):
+    if dash.ctx.triggered_id != "generate_all":
+        raise PreventUpdate
+
+    pretty_xml_as_string = generate_xml(data)
 
     return dict(content=pretty_xml_as_string, filename="output.xml")
