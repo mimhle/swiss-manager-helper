@@ -1,9 +1,10 @@
 import dash
+from dash import Output, Input
 
 
-def table(**kwargs):
+def table(id, **kwargs):
     default_kwargs = dict(
-        id="table",
+        id=id,
         editable=True,
         filter_action="none",
         sort_action="none",
@@ -12,9 +13,6 @@ def table(**kwargs):
         row_deletable=True,
         page_current=0,
         page_size=999,
-        persistence=True,
-        persisted_props=['data'],
-        persistence_type='local',
         css=[{
             "selector": ".column-header-name",
             "rule": "padding: 0 0.25rem"
@@ -47,6 +45,13 @@ def table(**kwargs):
             "overflow": "scroll",
         },
     )
+
+    @dash.callback(
+        Output(id, "row_deletable"),
+        Input(id, "data"),
+    )
+    def row_deletable(data):
+        return len(data) > 1
 
     return dash.dash_table.DataTable(
         **(default_kwargs | kwargs)
