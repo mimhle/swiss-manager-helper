@@ -70,8 +70,10 @@ layout = dbc.Container([
                         ]
                     ),
                     dbc.Row([
-                        dbc.Col(dbc.Button("Auto fill club", id="fill_club", n_clicks=0, color="secondary", disabled=True, className="me-1 w-fit"), width="auto"),
                         dbc.Col(dbc.Button("Auto fill team", id="fill_team", n_clicks=0, color="secondary", disabled=True, className="me-1 w-fit"), width="auto"),
+                        dbc.Col(dbc.Button("Auto fill club", id="fill_club", n_clicks=0, color="secondary", disabled=True, className="me-1 w-fit"), width="auto"),
+                        dbc.Col(dbc.Button("Auto fill federation", id="fill_federation", n_clicks=0, color="secondary", disabled=True, className="me-1 w-fit"), width="auto"),
+                        dbc.Col(dbc.Button("Generate teams.xml", id="generate_team", n_clicks=0, color="secondary", disabled=True, className="me-1 w-fit"), width="auto"),
                     ]),
                 ], className="flex flex-col gap-2 p-0"), title="Auto fill club and team"
             ),
@@ -127,6 +129,8 @@ def fill_group(n_clicks, data):
     Output("table_group", "data", allow_duplicate=True),
     Output("fill_club", "disabled"),
     Output("fill_team", "disabled"),
+    Output("fill_federation", "disabled"),
+    Output("generate_team", "disabled"),
     Input("table_group", "data"),
     prevent_initial_call=True,
 )
@@ -146,7 +150,7 @@ def change_data(data):
 
         data.append({k: "" for k in FIELDS.keys()})
 
-    return data, not any([row.get("Federation", None) for row in data]), not any([row.get("TeamUniqueId", None) for row in data])
+    return data, not any([row.get("Federation", None) for row in data]), not any([row.get("TeamUniqueId", None) for row in data]), not any([row.get("Federation", None) for row in data]), not any([row.get("TeamUniqueId", None) for row in data])
 
 
 @dash.callback(
@@ -191,6 +195,26 @@ def fill_team(n_clicks, data_group, data):
 
 @dash.callback(
     Output("table", "data", allow_duplicate=True),
+    Input("fill_federation", "n_clicks"),
+    Input("table_group", "data"),
+    Input("table", "data"),
+    prevent_initial_call=True,
+)
+def fill_federation(n_clicks, data_group, data):
+    if not data or dash.ctx.triggered_id != "fill_federation":
+        raise PreventUpdate
+
+    data_group = {row["Club"]: row["Federation"] for row in data_group if row.get("Club", None) and row.get("Federation", None)}
+
+    for row in data:
+        if row.get("Club", None):
+            row["Federation"] = data_group.get(row["Club"], "")
+
+    return data
+
+
+@dash.callback(
+    Output("table", "data", allow_duplicate=True),
     Output("generate_menu", "children"),
     Input("table", "data"),
     State("generate_menu", "children"),
@@ -201,6 +225,9 @@ def change_data(data, children):
 
     data = [row for row in data if row.get("Name", None)]
     for i, row in enumerate(data):
+        for k, v in row.items():
+            row[k] = v.strip() if isinstance(v, str) else v
+
         row["PlayerUniqueId"] = i + 1
         if row.get("Name", None):
             name = re.sub(r"\(.*\)", '', unicodedata.normalize('NFC', row["Name"])).strip()
@@ -226,7 +253,7 @@ def change_data(data, children):
     ) for name in group]]
 
 
-def generate_xml(data, group=None):
+def generate_players_xml(data, group=None):
     root = ET.Element('Players')
     for row in data:
         if group:
@@ -248,6 +275,41 @@ def generate_xml(data, group=None):
     return pretty_xml_as_string
 
 
+def generate_teams_xml(data):
+    root = ET.Element('Teams')
+    for row in data:
+        team = ET.SubElement(root, 'Team')
+        team.set("TeamLongname", row.get("Club", ""))
+        team.set("TeamShortname", row.get("Federation", ""))
+        team.set("TeamUniqueId", str(row.get("TeamUniqueId", "")))
+
+    tree = ET.ElementTree(root)
+    result_str = ET.tostring(tree.getroot(), encoding="utf8").decode("utf8")
+
+    dom = xml.dom.minidom.parseString(result_str)
+    pretty_xml_as_string = dom.toprettyxml()
+
+    return pretty_xml_as_string
+
+
+@dash.callback(
+    Output("download-text", "data", allow_duplicate=True),
+    Input("generate_team", "n_clicks"),
+    Input("table_group", "data"),
+    prevent_initial_call=True,
+)
+def generate_team(n_clicks, data):
+    if dash.ctx.triggered_id != "generate_team":
+        raise PreventUpdate
+
+    data = [row for row in data if row.get("TeamUniqueId", None)]
+    data = sorted(data, key=itemgetter("TeamUniqueId"))
+
+    pretty_xml_as_string = generate_teams_xml(data)
+
+    return dict(content=pretty_xml_as_string, filename="teams.xml")
+
+
 @dash.callback(
     Output("download-text", "data", allow_duplicate=True),
     Output({'type': 'generate_group', 'index': ALL}, 'n_clicks'),
@@ -256,12 +318,10 @@ def generate_xml(data, group=None):
     prevent_initial_call=True,
 )
 def generate_group(n_clicks, data):
-    print(dash.ctx.triggered_id)
-
     if dash.ctx.triggered_id == "table":
         raise PreventUpdate
 
-    pretty_xml_as_string = generate_xml(data, group=dash.ctx.triggered_id["index"])
+    pretty_xml_as_string = generate_players_xml(data, group=dash.ctx.triggered_id["index"])
 
     return dict(content=pretty_xml_as_string, filename=f"{dash.ctx.triggered_id['index']}.xml"), n_clicks
 
@@ -276,6 +336,6 @@ def download_text(n_clicks, data):
     if dash.ctx.triggered_id != "generate_all":
         raise PreventUpdate
 
-    pretty_xml_as_string = generate_xml(data)
+    pretty_xml_as_string = generate_players_xml(data)
 
     return dict(content=pretty_xml_as_string, filename="output.xml")
