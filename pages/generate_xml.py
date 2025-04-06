@@ -5,9 +5,8 @@ from operator import itemgetter
 
 import dash
 import dash_bootstrap_components as dbc
-import pandas as pd
 import unicodedata
-from dash import Output, Input, ALL, MATCH, State, html
+from dash import Output, Input, ALL, State
 from dash.exceptions import PreventUpdate
 from toolz import unique
 

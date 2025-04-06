@@ -15,6 +15,7 @@ app.layout = dbc.Container([
         [
             dbc.Tab(label="Generate xml", tab_id="xml"),
             dbc.Tab(label="Normalize", tab_id="normalize"),
+            dbc.Tab(label="Summarize team result", tab_id="summarize")
         ],
         id="tabs",
         active_tab="xml",

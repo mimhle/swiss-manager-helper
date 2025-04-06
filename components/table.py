@@ -46,13 +46,6 @@ def table(id, **kwargs):
         },
     )
 
-    @dash.callback(
-        Output(id, "row_deletable"),
-        Input(id, "data"),
-    )
-    def row_deletable(data):
-        return len(data) > 1
-
     return dash.dash_table.DataTable(
         **(default_kwargs | kwargs)
     )

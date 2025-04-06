@@ -6,3 +6,7 @@
 .show {
     visibility: visible !important;
 }
+
+.modebar-group {
+    display: flex !important;
+}
