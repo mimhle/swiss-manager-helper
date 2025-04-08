@@ -1,7 +1,6 @@
-import json
-import re
-import xml.dom.minidom
-import xml.etree.ElementTree as ET
+from io import BytesIO
+
+from openpyxl import Workbook
 from operator import itemgetter
 from typing import Literal
 
@@ -12,10 +11,12 @@ import plotly.express as px
 import unicodedata
 from dash import Output, Input, ALL, State, dcc
 from dash.exceptions import PreventUpdate
+from openpyxl.cell import Cell
+from openpyxl.styles import Font, PatternFill
 from toolz import unique
 
 from components.table import table
-from utils import parse_number
+from utils import parse_number, autofit_columns
 
 dash.register_page(
     __name__,
@@ -189,10 +190,10 @@ def generate_summary(data, sort_by: Literal["rank", "score"] = "rank", top=3):
         if sort_by == "rank":
             result[team]["players"] = sorted(result[team]["players"], key=itemgetter("rank"))[:top]
         elif sort_by == "score":
-            result[team]["players"] = sorted(result[team]["players"], key=itemgetter("score"), reverse=True)[:top]
+            result[team]["players"] = sorted(result[team]["players"], key=lambda x: (x["score"], x["rank"]), reverse=True)[:top]
 
     for team in result:
-        result[team]["rank"] = sum(player["rank"] for player in result[team]["players"]) + count * (top - len(result[team]["players"]))
+        result[team]["rank"] = sum(player["rank"] for player in result[team]["players"]) + (count + 1) * (top - len(result[team]["players"]))
         result[team]["score"] = sum(player["score"] for player in result[team]["players"])
         result[team]["tb1"] = sum(player["tb1"] for player in result[team]["players"])
         result[team]["tb2"] = sum(player["tb2"] for player in result[team]["players"])
@@ -238,3 +239,44 @@ def update_graph(data, sort_by: Literal["rank", "score"] = "rank"):
     )
 
     return fig
+
+
+@dash.callback(
+    Output("download-text", "data"),
+    Input("export", "n_clicks"),
+    Input("table_summarize", "data"),
+    Input("sort_by", "value"),
+    prevent_initial_call=True,
+)
+def export_to_excel(n_clicks, data, sort_by: Literal["rank", "score"] = "rank"):
+    if not data or dash.ctx.triggered_id != "export":
+        raise PreventUpdate
+
+    summary_data = generate_summary(data, sort_by="rank", top=3)
+
+    def styled_cells(d):
+        for c in d:
+            c = Cell(ws, column=1, row=1, value=c)
+            c.font = Font(bold=True)
+            c.fill = PatternFill(start_color="BFBFBF", end_color="BFBFBF", fill_type="solid")
+            yield c
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Rank", "Team", "Total Rank", "Score", "TB1", "TB2", "TB3", "TB4", "TB5"])
+    i = 1
+    for team, values in sorted(summary_data.items(), key=lambda x: (99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]) if sort_by == "rank" else (x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
+        ws.append(styled_cells(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [i, team, values["rank"], values["score"], values["tb1"], values["tb2"], values["tb3"], values["tb4"], values["tb5"]])))
+        for j, player in enumerate(values["players"]):
+            ws.append(list(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [j+1, player["name"], player["rank"], player["score"], player["tb1"], player["tb2"], player["tb3"], player["tb4"], player["tb5"]])))
+
+        i += 1
+
+    autofit_columns(ws)
+
+    virtual_workbook = BytesIO()
+    wb.save(virtual_workbook)
+    return dcc.send_bytes(
+        virtual_workbook.getvalue(),
+        filename="summary.xlsx",
+    )
