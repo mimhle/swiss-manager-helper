@@ -190,7 +190,7 @@ def generate_summary(data, sort_by: Literal["rank", "score"] = "rank", top=3):
         if sort_by == "rank":
             result[team]["players"] = sorted(result[team]["players"], key=itemgetter("rank"))[:top]
         elif sort_by == "score":
-            result[team]["players"] = sorted(result[team]["players"], key=lambda x: (x["score"], x["rank"]), reverse=True)[:top]
+            result[team]["players"] = sorted(result[team]["players"], key=lambda x: (x["score"], 99999 - x["rank"]), reverse=True)[:top]
 
     for team in result:
         result[team]["rank"] = sum(player["rank"] for player in result[team]["players"]) + (count + 1) * (top - len(result[team]["players"]))
@@ -216,7 +216,7 @@ def update_graph(data, sort_by: Literal["rank", "score"] = "rank"):
 
     summary_data = generate_summary(data, sort_by=sort_by, top=3)
     graph_data = pandas.DataFrame(columns=["team", "rank", "score", "tb1", "tb2", "tb3", "tb4", "tb5"])
-    for team, values in sorted(summary_data.items(), key=lambda x: (99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]) if sort_by == "rank" else (x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
+    for team, values in sorted(summary_data.items(), key=lambda x: (99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"], reverse=True) if sort_by == "rank" else (x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
         graph_data = pandas.concat([graph_data, pandas.DataFrame([{
             "team": team,
             "rank": values["rank"],
@@ -265,7 +265,7 @@ def export_to_excel(n_clicks, data, sort_by: Literal["rank", "score"] = "rank"):
     ws = wb.active
     ws.append(["Rank", "Team", "Total Rank", "Score", "TB1", "TB2", "TB3", "TB4", "TB5"])
     i = 1
-    for team, values in sorted(summary_data.items(), key=lambda x: (99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]) if sort_by == "rank" else (x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
+    for team, values in sorted(summary_data.items(), key=lambda x: (99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"], reverse=True) if sort_by == "rank" else (x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
         ws.append(styled_cells(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [i, team, values["rank"], values["score"], values["tb1"], values["tb2"], values["tb3"], values["tb4"], values["tb5"]])))
         for j, player in enumerate(values["players"]):
             ws.append(list(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [j+1, player["name"], player["rank"], player["score"], player["tb1"], player["tb2"], player["tb3"], player["tb4"], player["tb5"]])))
