@@ -1,25 +1,14 @@
 import base64
 import re
 from io import BytesIO
-from operator import itemgetter
-from typing import Literal
 
-import PIL
 import dash
 import dash_bootstrap_components as dbc
 import numpy
-import pandas
 import plotly.express as px
-import unicodedata
+import qrcode
 from dash import Output, Input, ALL, State, dcc
 from dash.exceptions import PreventUpdate
-from openpyxl.cell import Cell
-from openpyxl.styles import Font, PatternFill
-from toolz import unique
-import qrcode
-
-from components.table import table
-from utils import parse_number, autofit_columns
 
 dash.register_page(
     __name__,
