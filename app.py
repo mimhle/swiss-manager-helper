@@ -12,7 +12,7 @@ app = DashProxy(
 
 server = app.server
 
-app.layout = dbc.Container([
+app.layout = dbc.Container([dbc.Container([
     dbc.Tabs(
         [
             dbc.Tab(label="Generate xml", tab_id="xml"),
@@ -22,6 +22,7 @@ app.layout = dbc.Container([
         ],
         id="tabs",
         active_tab="xml",
+        className="h-fit",
     ), dbc.Spinner(
         [
             dcc.Location(id="url"),
@@ -32,6 +33,7 @@ app.layout = dbc.Container([
         delay_show=300,
         fullscreen=True,
     ),
+], className="flex flex-col item-center gap-2 m-0 mx-auto py-2 pb-5 min-h-screen w-screen"),
     dbc.Container(
         html.A(dbc.Row([
             "Developed by mimhle",
@@ -40,7 +42,7 @@ app.layout = dbc.Container([
         ), href="https://github.com/mimhle/swiss-manager-helper", className="block w-fit ml-auto"),
         className="absolute bottom-0 right-0 w-screen no-max-width border-t-[1px] border-gray-300"
     ),
-], className="flex flex-col item-center gap-2 m-0 mx-auto py-2 h-screen w-screen")
+], className="relative no-max-width h-fit overflow-scroll"),
 
 
 @app.callback(
