@@ -10,6 +10,8 @@ app = DashProxy(
     use_pages=True,
 )
 
+server = app.server
+
 app.layout = dbc.Container([
     dbc.Tabs(
         [
