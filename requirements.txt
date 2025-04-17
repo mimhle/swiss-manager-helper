@@ -8,3 +8,4 @@ toolz~=1.0.0
 gunicorn~=23.0.0
 dash_bootstrap_components~=1.7.1
 dash_extensions~=1.0
+pillow~=11.0.0
