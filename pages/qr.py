@@ -107,8 +107,6 @@ def generate(
     if n_clicks is None:
         raise PreventUpdate
 
-    print(input_qr, input_qr_size)
-
     # test
     qr = qrcode.QRCode(
         version=input_qr_size if input_qr_size and (input_qr_size > 0) else None,

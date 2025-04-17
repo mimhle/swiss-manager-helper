@@ -10,3 +10,7 @@
 .modebar-group {
     display: flex !important;
 }
+
+.no-max-width {
+    max-width: none !important;
+}
