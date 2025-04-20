@@ -30,7 +30,7 @@ layout = dbc.Container([
             ], className="w-fit m-0"),
             dbc.Container([
                 dbc.FormFloating([
-                    dbc.Input(id="box_size_qr", type="number", value=20, min=0, max=200),
+                    dbc.Input(id="box_size_qr", type="number", value=20, min=0, max=100),
                     dbc.Label("Box size (px)"),
                 ], className="w-fit m-0"),
             ], className="w-fit m-0"),

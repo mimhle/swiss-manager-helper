@@ -1,5 +1,4 @@
 import dash
-from dash import Output, Input
 
 
 def table(id, **kwargs):
@@ -21,18 +20,18 @@ def table(id, **kwargs):
             "rule": "text-align: left !important"
         }],
         style_cell={'textAlign': 'left'},
-        style_header={
+        style_header=kwargs.get("style_header", {}) | {
             "backgroundColor": "rgb(230, 230, 230)",
             "fontWeight": "bold",
             "padding": "10px 0px",
         },
-        style_header_conditional=[
+        style_header_conditional=kwargs.get("style_header_conditional", []) + [
             {
                 "if": {"column_editable": False},
                 "color": "rgba(0, 0, 0, 0.5)",
             }
         ],
-        style_data_conditional=[
+        style_data_conditional=kwargs.get("style_data_conditional", []) + [
             {
                 "if": {"state": "active"},
                 "textAlign": "left",

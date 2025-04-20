@@ -88,8 +88,20 @@ layout = dbc.Container([
             "selectable": k != "PlayerUniqueId" and k != "Lastname" and k != "Firstname",
             "type": "text",
             "editable": k != "PlayerUniqueId" and k != "Lastname" and k != "Firstname",
-        } for k, v in FIELDS.items()],
+        } for k, v in FIELDS.items()] + [{
+            "name": "Duplicate",
+            "id": "duplicate",
+        }],
+        hidden_columns=["duplicate"],
         data=[{"": 1}],
+        style_data_conditional=[
+            {
+                'if': {
+                    'filter_query': '{duplicate} = "true"',
+                },
+                'backgroundColor': '#f2ff0030',
+            }
+        ]
     ),
     dbc.DropdownMenu([
         dbc.DropdownMenuItem(
@@ -223,6 +235,7 @@ def change_data(data, children):
     group = set()
 
     data = [row for row in data if row.get("Name", None)]
+    name_dict = dict()
     for i, row in enumerate(data):
         for k, v in row.items():
             row[k] = v.strip() if isinstance(v, str) else v
@@ -238,6 +251,12 @@ def change_data(data, children):
                 row["Lastname"], row["Firstname"] = name[0], " ".join(name[1:])
         else:
             row["Lastname"], row["Firstname"] = "", ""
+
+        if f"{row['Lastname']} {row['Firstname']}" in name_dict:
+            row["duplicate"] = "true"
+            name_dict[f"{row['Lastname']} {row['Firstname']}"]["duplicate"] = "true"
+        else:
+            name_dict[f"{row['Lastname']} {row['Firstname']}"] = row
 
         if row.get("Group", None):
             group.add(row["Group"])
@@ -261,7 +280,7 @@ def generate_players_xml(data, group=None):
 
         player = ET.SubElement(root, 'Player')
         for k, v in row.items():
-            if not v or not k or k == "Name":
+            if not v or not k or k == "Name" or k not in FIELDS:
                 continue
             player.set(k, str(v))
 

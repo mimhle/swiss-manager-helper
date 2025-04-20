@@ -14,3 +14,7 @@
 .no-max-width {
     max-width: none !important;
 }
+
+.dash-spreadsheet-menu {
+    display: none !important;
+}
