@@ -252,6 +252,7 @@ def change_data(data, children):
         else:
             row["Lastname"], row["Firstname"] = "", ""
 
+        row["duplicate"] = "false"
         if f"{row['Lastname']} {row['Firstname']}" in name_dict:
             row["duplicate"] = "true"
             name_dict[f"{row['Lastname']} {row['Firstname']}"]["duplicate"] = "true"
