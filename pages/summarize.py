@@ -1,6 +1,4 @@
 from io import BytesIO
-
-from openpyxl import Workbook
 from operator import itemgetter
 from typing import Literal
 
@@ -8,12 +6,11 @@ import dash
 import dash_bootstrap_components as dbc
 import pandas
 import plotly.express as px
-import unicodedata
-from dash import Output, Input, ALL, State, dcc
+from dash import Output, Input, dcc
 from dash.exceptions import PreventUpdate
+from openpyxl import Workbook
 from openpyxl.cell import Cell
 from openpyxl.styles import Font, PatternFill
-from toolz import unique
 
 from components.table import table
 from utils import parse_number, autofit_columns
@@ -212,7 +209,7 @@ def update_graph(data, sort_by: Literal["rank", "score"] = "rank"):
     if not data:
         raise PreventUpdate
 
-    summary_data = generate_summary(data, sort_by=sort_by, top=3)
+    summary_data = generate_summary(data, sort_by=sort_by, top=2)
     graph_data = pandas.DataFrame(columns=["team", "rank", "score", "tb1", "tb2", "tb3", "tb4", "tb5"])
     for team, values in sorted(summary_data.items(), key=lambda x: (len(x[1]["players"]), 99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]) if sort_by == "rank" else (len(x[1]["players"]), x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
         graph_data = pandas.concat([graph_data, pandas.DataFrame([{
@@ -246,11 +243,11 @@ def update_graph(data, sort_by: Literal["rank", "score"] = "rank"):
     Input("sort_by", "value"),
     prevent_initial_call=True,
 )
-def export_to_excel(n_clicks, data, sort_by: Literal["rank", "score"] = "rank"):
+def export_to_excel(n_clicks, data, sort_by: Literal["rank", "score"] = "rank", top: int = 2):
     if not data or dash.ctx.triggered_id != "export":
         raise PreventUpdate
 
-    summary_data = generate_summary(data, sort_by="rank", top=3)
+    summary_data = generate_summary(data, sort_by=sort_by, top=top)
 
     def styled_cells(d):
         for c in d:
@@ -261,12 +258,15 @@ def export_to_excel(n_clicks, data, sort_by: Literal["rank", "score"] = "rank"):
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["Rank", "Team", "Total Rank", "Score", "TB1", "TB2", "TB3", "TB4", "TB5"])
+    if sort_by == "rank":
+        ws.append(["Rank", "Team", "Total Rank", "Score", "TB1", "TB2", "TB3", "TB4", "TB5"])
+    else:
+        ws.append(["Rank", "Team", "Score", "Total Rank", "TB1", "TB2", "TB3", "TB4", "TB5"])
     i = 1
     for team, values in sorted(summary_data.items(), key=lambda x: (len(x[1]["players"]), 99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]) if sort_by == "rank" else (len(x[1]["players"]), x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
-        ws.append(styled_cells(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [i, team, values["rank"], values["score"], values["tb1"], values["tb2"], values["tb3"], values["tb4"], values["tb5"]])))
+        ws.append(styled_cells(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [i, team, values["rank"], values["score"], values["tb1"], values["tb2"], values["tb3"], values["tb4"], values["tb5"]] if sort_by == "rank" else [i, team, values["score"], values["rank"], values["tb1"], values["tb2"], values["tb3"], values["tb4"], values["tb5"]])))
         for j, player in enumerate(values["players"]):
-            ws.append(list(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [j+1, player["name"], player["rank"], player["score"], player["tb1"], player["tb2"], player["tb3"], player["tb4"], player["tb5"]])))
+            ws.append(list(map(lambda x: f'{x:g}' if isinstance(x, float) else str(x), [j+1, player["name"], player["rank"], player["score"], player["tb1"], player["tb2"], player["tb3"], player["tb4"], player["tb5"]] if sort_by == "rank" else [j+1, player["name"], player["score"], player["rank"], player["tb1"], player["tb2"], player["tb3"], player["tb4"], player["tb5"]])))
 
         i += 1
 
