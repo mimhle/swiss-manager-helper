@@ -77,6 +77,17 @@ layout = dbc.Container([
         data=[{"": 1}],
     ),
     dbc.Container([
+        dbc.Label("Top:"),
+        dbc.Input(
+            id="top",
+            type="number",
+            value=3,
+            min=1,
+            step=1,
+            className="w-24",
+        ),
+    ]),
+    dbc.Container([
         dbc.Label("Rank by:"),
         dbc.RadioItems(
             id="sort_by",
@@ -203,13 +214,14 @@ def generate_summary(data, sort_by: Literal["rank", "score"] = "rank", top=3):
     Output("graph_summarize", "figure"),
     Input("table_summarize", "data"),
     Input("sort_by", "value"),
+    Input("top", "value"),
     prevent_initial_call=True,
 )
-def update_graph(data, sort_by: Literal["rank", "score"] = "rank"):
+def update_graph(data, sort_by: Literal["rank", "score"] = "rank", top: int = 2):
     if not data:
         raise PreventUpdate
 
-    summary_data = generate_summary(data, sort_by=sort_by, top=2)
+    summary_data = generate_summary(data, sort_by=sort_by, top=top)
     graph_data = pandas.DataFrame(columns=["team", "rank", "score", "tb1", "tb2", "tb3", "tb4", "tb5"])
     for team, values in sorted(summary_data.items(), key=lambda x: (len(x[1]["players"]), 99999 - x[1]["rank"], x[1]["score"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]) if sort_by == "rank" else (len(x[1]["players"]), x[1]["score"], 99999 - x[1]["rank"], x[1]["tb1"], x[1]["tb2"], x[1]["tb3"], x[1]["tb4"], x[1]["tb5"]), reverse=True):
         graph_data = pandas.concat([graph_data, pandas.DataFrame([{
@@ -241,6 +253,7 @@ def update_graph(data, sort_by: Literal["rank", "score"] = "rank"):
     Input("export", "n_clicks"),
     Input("table_summarize", "data"),
     Input("sort_by", "value"),
+    Input("top", "value"),
     prevent_initial_call=True,
 )
 def export_to_excel(n_clicks, data, sort_by: Literal["rank", "score"] = "rank", top: int = 2):
