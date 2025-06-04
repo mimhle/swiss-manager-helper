@@ -18,3 +18,7 @@
 .dash-spreadsheet-menu {
     display: none !important;
 }
+
+.Select-menu-outer {
+display : block !important;
+}

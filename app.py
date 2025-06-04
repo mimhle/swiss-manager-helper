@@ -6,7 +6,7 @@ from dash_extensions.enrich import DashProxy
 app = DashProxy(
     __name__,
     external_scripts=['https://cdn.tailwindcss.com'],
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.BOOTSTRAP],
     use_pages=True,
 )
 
@@ -15,10 +15,10 @@ server = app.server
 app.layout = dbc.Container([dbc.Container([
     dbc.Tabs(
         [
-            dbc.Tab(label="Generate xml", tab_id="xml"),
+            dbc.Tab(label=" Generate xml", tab_id="xml", labelClassName="bi bi-filetype-xml"),
             # dbc.Tab(label="Normalize", tab_id="normalize"),
-            dbc.Tab(label="Summarize team result", tab_id="summarize"),
-            dbc.Tab(label="QR code generator", tab_id="qr")
+            dbc.Tab(label=" Summarize team result", tab_id="summarize", labelClassName="bi bi-bar-chart-line"),
+            dbc.Tab(label=" QR code generator", tab_id="qr", labelClassName="bi bi-qr-code")
         ],
         id="tabs",
         active_tab="xml",
