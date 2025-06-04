@@ -43,7 +43,7 @@ app.layout = dbc.Container([dbc.Container([
             "Developed by mimhle",
             html.Img(src="/static/github.png", className="w-5 h-5 ml-1 my-auto p-0"),
         ], className="w-fit p-1 px-2 text-sm text-gray-500"
-        ), href="https://github.com/mimhle/swiss-manager-helper", className="block w-fit ml-auto"),
+        ), href="https://github.com/mimhle/swiss-manager-helper", className="block w-fit ml-auto", target="_blank", title="GitHub repository"),
         className="absolute bottom-0 right-0 w-screen no-max-width border-t-[1px] border-gray-300"
     ),
 ], className="relative no-max-width h-fit overflow-scroll"),
