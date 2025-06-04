@@ -69,16 +69,16 @@ layout = dbc.Container([
                 ),
             ], className="w-fit m-0 border-[1px] border-gray-250 rounded-md p-1 px-3"),
         ], className="flex flex-row gap-1 mt-2 justify-start"),
-    ], className="w-full flex flex-col gap-2"),
+    ], className="w-full flex flex-col gap-2 ml-0 p-0"),
     dbc.Row([
-        dbc.Button("Generate", id="generate_qr", className="me-1 w-fit"),
+        dbc.Button("Generate", id="generate_qr", className="w-fit"),
         dbc.Button("Download", color="info", id="download_btn_qr", className="w-fit", disabled=True),
         dbc.Button("Raw", color="info", id="raw_qr", className="w-fit", disabled=True),
-    ], className="flex flex-row gap-2 mt-2"),
+    ], className="flex flex-row gap-2 mt-2 ml-0"),
     dcc.Download(id="download_qr"),
     dbc.Container([], className="w-full", id="qr"),
     dcc.Location(id="url_qr"),
-])
+], className="p-0")
 
 
 @dash.callback(
