@@ -14,7 +14,7 @@ server = app.server
 
 app.layout = dbc.Container([dbc.Container([
     dbc.Row([
-        html.H1("Swiss Manager Helper", className="text-3xl font-bold mb-3 w-fit"),
+        html.H1("Swiss-Manager Helper", className="text-3xl font-bold mb-3 w-fit"),
         html.A(html.I(className="bi bi-link-45deg"), href="https://swiss-manager.at/", className="m-0 p-0 w-fit", target="_blank", title="Swiss Manager official website"),
     ]),
     dbc.Tabs(
