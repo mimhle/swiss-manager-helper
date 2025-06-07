@@ -1,4 +1,5 @@
 import base64
+import copy
 import os
 import re
 import xml.dom.minidom
@@ -9,6 +10,7 @@ from operator import itemgetter
 
 import dash
 import dash_bootstrap_components as dbc
+import mako
 import pandas as pd
 import unicodedata
 from PIL import Image, ImageDraw, ImageFont
@@ -18,7 +20,7 @@ from mako.template import Template
 from toolz import unique
 
 from components.table import table
-from utils import base64_to_pil, random_string, contains_mako_syntax
+from utils import base64_to_pil, random_string, hex_to_rgb
 
 FIELDS = {
     "PlayerUniqueId": "Id",
@@ -171,7 +173,7 @@ layout = dbc.Container([
     dbc.Modal(
         [
             dbc.ModalHeader(dbc.ModalTitle("Generate player cards"),),
-            dbc.ModalBody([
+            dbc.ModalBody(dbc.Spinner([
                 dcc.Upload(
                     html.Div([
                         html.I(className="bi bi-image"),
@@ -210,7 +212,7 @@ layout = dbc.Container([
                         'margin': '10px'
                     },
                 ),
-            ]),
+            ], id="upload_loading")),
             dbc.ModalBody(html.Div([
                 dbc.Row([
                     dbc.Col([
@@ -218,7 +220,7 @@ layout = dbc.Container([
                             html.Img(src="", className="w-full h-fit", id="card_preview_image"),
                         ),
                         dcc.Store("card_template_image_store", data="./static/card_template.png"),
-                    ], width=9),
+                    ], width=8),
                     dbc.Col([
                         dbc.Row([
                             html.Div(
@@ -244,7 +246,7 @@ layout = dbc.Container([
                         ], className="w-fit"),
                         dbc.Button([html.I(className="bi bi-arrow-clockwise"), " Update preview"], id="card_template_preview_update_btn", n_clicks=0, className="w-fit"),
                         dcc.Store("card_template_config"),
-                    ], width=3, className="flex flex-col gap-1"),
+                    ], className="flex flex-col gap-1"),
                 ], className="mb-1"),
             ]), className="h-fit"),
             dbc.ModalFooter([
@@ -258,6 +260,10 @@ layout = dbc.Container([
         scrollable=False
     ),
 ], className="flex flex-col gap-2 p-0")
+
+
+def generate_name(data: dict) -> dict:
+    return data | {k.lower(): v for k, v in data.items()} | {FIELDS[k].lower().replace(" ", "_"): v for k, v in data.items() if k in FIELDS}
 
 
 @dash.callback(
@@ -431,13 +437,17 @@ def change_data(data, children):
     if len(data) > 1:
         for k, v in data[-1].items():
             v = str(v)
-            if v.startswith("=") and contains_mako_syntax(str(v)) and k not in ("Name", "Lastname", "Firstname"):
+            if v.startswith("=") and k not in ("Name", "Lastname", "Firstname"):
                 v = v[1:]
                 for row in data[:-1]:
                     try:
-                        row[k] = Template(v).render(**(row | {k.lower(): v for k, v in row.items()}))
-                    except NameError:
-                        pass
+                        row[k] = Template(v).render(**generate_name(row))
+                    except (NameError, mako.exceptions.SyntaxException) as e:
+                        if isinstance(e, mako.exceptions.SyntaxException) or "Undefined" in str(e):
+                            try:
+                                row[k] = Template(v + "}").render(**generate_name(row))
+                            except (NameError, mako.exceptions.SyntaxException):
+                                row[k] = v
 
     data = [row for row in data if row.get("Name", None)]
 
@@ -553,10 +563,9 @@ def read_excel(content: str) -> pd.DataFrame:
         Output("excel_upload_btn", "contents")
     ],
     [Input("excel_upload_btn", "contents")],
-    [State('excel_upload_btn', 'filename')],
     prevent_initial_call=True,
 )
-def toggle_excel_import_modal(contents, filename):
+def toggle_excel_import_modal(contents):
     if not contents:
         raise PreventUpdate
     data = read_excel(contents)
@@ -633,9 +642,12 @@ def import_excel(n_clicks, data):
     first_row = data.iloc[0]
     data = data.iloc[1:].reset_index(drop=True)
 
+    if len([v for v in first_row.to_list() if v]) != len(set(v for v in first_row.to_list() if v)):
+        raise PreventUpdate
+
     for col in first_row.keys():
-        if first_row[col] and first_row[col] in FIELDS:
-            data.rename(columns={col: FIELDS[first_row[col]]}, inplace=True)
+        if first_row[col] and any(FIELDS[f] == first_row[col] for f in FIELDS.keys()):
+            data.rename(columns={col: next(f for f in FIELDS if FIELDS[f] == first_row[col])}, inplace=True)
         else:
             del data[col]
 
@@ -753,10 +765,14 @@ clientside_callback(
         const mergedJson = mergeObject(jsonObject, template);
         window.jsonEditor.set(mergedJson);
         
-        return null;
+        return [
+            null,
+            mergedJson,
+        ];
     }
     """,
     Output("card_template_import_config_btn", "contents"),
+    Output('card_template_config', 'data', allow_duplicate=True),
     Input("card_template_import_config_btn", "contents"),
     prevent_initial_call=True,
 )
@@ -807,22 +823,15 @@ clientside_callback(
         }
         
         const container = await waitForElm("#jsoneditor");
-        
-        const options = {
-            mode: "form",
-            search: false,
-            name: "Player Card Config",
-        };
-        const editor = new JSONEditor(container, options);
-
         const initialJson = {
             "font": "",
             "name": {
                 "anchor": "mm",
                 "offsetX": 0,
                 "offsetY": 0,
-                "marginX": 0,
+                "maxWidth": 500,
                 "maxFontSize": 80,
+                "maxWidthCompensate": 1,
                 "color": "#000000",
                 "template": "${Lastname} ${Firstname}",
             },
@@ -830,8 +839,9 @@ clientside_callback(
                 "anchor": "mm",
                 "offsetX": 0,
                 "offsetY": 80,
-                "marginX": 0,
+                "maxWidth": 400,
                 "maxFontSize": 30,
+                "maxWidthCompensate": 1,
                 "color": "#000000",
                 "template": "${Club}",
             },
@@ -839,8 +849,9 @@ clientside_callback(
                 "anchor": "mm",
                 "offsetX": 0,
                 "offsetY": 30,
-                "marginX": 0,
+                "maxWidth": 400,
                 "maxFontSize": 30,
+                "maxWidthCompensate": 1,
                 "color": "#000000",
                 "template": "Group: ${Group}",
             },
@@ -848,12 +859,23 @@ clientside_callback(
                 "anchor": "mm",
                 "offsetX": 100,
                 "offsetY": 30,
-                "marginX": 0,
+                "maxWidth": 100,
                 "maxFontSize": 30,
+                "maxWidthCompensate": 1,
                 "color": "#000000",
                 "template": "${PlayerUniqueId}",
             },
         };
+        
+        const options = {
+            mode: "form",
+            search: false,
+            name: "Player Card Config",
+            onClassName: ({ path, field, value }) => {
+                console.log("onClassName", path, field, value);
+            }
+        };
+        const editor = new JSONEditor(container, options);
         editor.set(data || initialJson);
         window.jsonEditor = editor;  // Store the editor in a global variable for later use
         
@@ -870,11 +892,15 @@ clientside_callback(
 def draw_text(img: Image, row: dict, config: dict, font: str | None) -> Image:
     if not row:
         return img
-    text = Template(config["template"]).render(**{k: "" for k in FIELDS.keys()} | row)
+    try:
+        text = Template(config["template"]).render(**generate_name(row))
+    except NameError:
+        text = config["template"]
     if not text:
         return img
 
     img = img.copy()
+    config = copy.deepcopy(config)
     d = ImageDraw.Draw(img)
     center = img.width // 2, img.height // 2
     center = (
@@ -889,10 +915,14 @@ def draw_text(img: Image, row: dict, config: dict, font: str | None) -> Image:
     except OSError:
         font_path = "./Roboto.ttf"
         font = ImageFont.truetype(font_path, font_size)
-    while d.textlength(text, font) >= (img.width - 2 * config["marginX"]):
+    while d.textlength(text, font) >= config["maxWidth"]:
         font_size -= 1
+        config["maxWidth"] = int(config["maxWidth"] * config["maxWidthCompensate"])
         font = ImageFont.truetype(font_path, font_size)
-    d.text(center, text, fill=config["color"], anchor="mm", font=font)
+    try:
+        d.text(center, text, fill=Template(config["color"]).render(**generate_name(row)), anchor=config["anchor"], font=font)
+    except NameError:
+        d.text(center, text, fill="#000000", anchor=config["anchor"], font=font)
 
     return img
 
@@ -917,6 +947,7 @@ def update_card_preview_image(template, config, preview, data):
 
     image = Image.open(template).convert("RGBA")
     overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
+    pattern = r'#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{8})\b'
 
     d = ImageDraw.Draw(image)
     if preview == "0":
@@ -935,27 +966,30 @@ def update_card_preview_image(template, config, preview, data):
                 center[1] + value["offsetY"]
             )
             top_left = (
-                center[0] - (image.width // 2 - value["marginX"]),
+                center[0] - value["maxWidth"] // 2,
                 center[1] - value["maxFontSize"] // 2
             )
             bottom_right = (
-                center[0] + (image.width // 2 - value["marginX"]),
+                center[0] + value["maxWidth"] // 2,
                 center[1] + value["maxFontSize"] // 2
             )
+            color = re.search(pattern, value["color"])
             d.rectangle(
                 [top_left, bottom_right],
-                fill=(255, 0, 0, 128)
+                fill=hex_to_rgb(color.group() if color else "#000000") + (128,),
+                outline=hex_to_rgb(color.group() if color else "#000000")
             )
         else:
             row = next((r for r in data if r.get("PlayerUniqueId") == int(preview)), None)
             overlay = draw_text(overlay, row, value, config.get("font", None))
 
-    image = Image.alpha_composite(image, overlay)
+    image = Image.alpha_composite(image, overlay).convert("RGB")
+    image.thumbnail((1200, 1200))
 
     buffered = BytesIO()
-    image.save(buffered, format="PNG")
+    image.save(buffered, format="JPEG")
     img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
-    result = f"data:image/png;base64,{img_str}"
+    result = f"data:image/jpeg;base64,{img_str}"
 
     return result
 
