@@ -1,7 +1,9 @@
 import base64
+import os
 import re
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
+import zipfile
 from io import BytesIO
 from operator import itemgetter
 
@@ -9,11 +11,14 @@ import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 import unicodedata
-from dash import Output, Input, ALL, State, html, dcc
+from PIL import Image, ImageDraw, ImageFont
+from dash import Output, Input, ALL, State, html, dcc, clientside_callback
 from dash.exceptions import PreventUpdate
+from mako.template import Template
 from toolz import unique
 
 from components.table import table
+from utils import base64_to_pil, random_string
 
 FIELDS = {
     "PlayerUniqueId": "Id",
@@ -29,6 +34,14 @@ FIELDS = {
     "Club": "Club",
     "TeamUniqueId": "Team Id",
 }
+
+TEMP_FOLDER = "./temp"
+FONTS_FOLDER = "./fonts"
+
+if not os.path.exists(TEMP_FOLDER):
+    os.makedirs(TEMP_FOLDER)
+if not os.path.exists(FONTS_FOLDER):
+    os.makedirs(FONTS_FOLDER)
 
 dash.register_page(
     __name__,
@@ -120,16 +133,19 @@ layout = dbc.Container([
             }
         ]
     ),
-    dbc.DropdownMenu([
-        dbc.DropdownMenuItem(
-            "Generate all", id="generate_all", n_clicks=0, className=""
-        ),
-    ], label=[html.I(className="bi bi-download"), " Generate"], class_name="p-0", id="generate_menu"),
-    dash.dcc.Download(id="download-text"),
+    dbc.Row([
+        dbc.DropdownMenu([
+            dbc.DropdownMenuItem(
+                "Generate all", id="generate_all", n_clicks=0, className=""
+            ),
+        ], label=[html.I(className="bi bi-download"), " Generate"], class_name="p-0 w-fit", id="generate_menu"),
+        dbc.Button([html.I(className="bi bi-card-image"), " Generate player cards"], id="card_open_btn", n_clicks=0, color="secondary", className="w-fit"),
+    ], className="flex flex-row gap-2 p-0 m-0"),
+    dash.dcc.Download(id="download"),
     dbc.Modal(
         [
             dbc.ModalHeader(dbc.ModalTitle("Import from Excel"),),
-            dbc.ModalBody("This is the content of the modal", id="excel_import_modal_body"),
+            dbc.ModalBody("", id="excel_import_modal_body"),
             dbc.ModalFooter(
                 dbc.Button("Import", id="excel_import_btn", className="ml-auto", n_clicks=0)
             ),
@@ -139,6 +155,95 @@ layout = dbc.Container([
         size="xl",
         backdrop="static",
         scrollable=True
+    ),
+    dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Generate player cards"),),
+            dbc.ModalBody([
+                dcc.Upload(
+                    html.Div([
+                        html.I(className="bi bi-image"),
+                        ' Drag and Drop or ',
+                        html.A('Select image')
+                    ]),
+                    id="card_template_upload_btn",
+                    accept=".png, .jpg, .jpeg",
+                    style={
+                        'width': '100%',
+                        'height': '60px',
+                        'lineHeight': '60px',
+                        'borderWidth': '3px',
+                        'borderStyle': 'dashed',
+                        'borderRadius': '5px',
+                        'textAlign': 'center',
+                        'margin': '10px'
+                    },
+                ),
+                dcc.Upload(
+                    html.Div([
+                        html.I(className="bi bi-file-earmark-font"),
+                        ' Drag and Drop or ',
+                        html.A('Select font')
+                    ]),
+                    id="font_upload_btn",
+                    accept=".ttf, .otf",
+                    style={
+                        'width': '100%',
+                        'height': '60px',
+                        'lineHeight': '60px',
+                        'borderWidth': '3px',
+                        'borderStyle': 'dashed',
+                        'borderRadius': '5px',
+                        'textAlign': 'center',
+                        'margin': '10px'
+                    },
+                ),
+            ]),
+            dbc.ModalBody(html.Div([
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Spinner(
+                            html.Img(src="", className="w-full h-fit", id="card_preview_image"),
+                        ),
+                        dcc.Store("card_template_image_store", data="./static/card_template.png"),
+                    ], width=9),
+                    dbc.Col([
+                        dbc.Row([
+                            html.Div(
+                                dcc.Upload(
+                                    dbc.Button([html.I(className="bi bi-box-arrow-in-down-right"), " Import config"], size="sm", color="secondary"),
+                                    id="card_template_import_config_btn",
+                                    accept=".json",
+                                    className="w-fit p-0",
+                                ),
+                                className="w-fit p-0",
+                            ),
+                            dbc.Button([html.I(className="bi bi-box-arrow-up-left"), " Export config"], id="card_template_export_config_btn", n_clicks=0, className="w-fit", size="sm", color="secondary"),
+                        ], className="flex flex-row gap-1 m-0"),
+                        html.Div(id="jsoneditor", className="w-full h-60"),
+                        dbc.InputGroup([
+                            dbc.InputGroupText("Preview"),
+                            dbc.Select(
+                                id="card_preview_select",
+                                options=[
+                                    {"label": "Id #1", "value": "1"},
+                                ],
+                            )
+                        ], className="w-fit"),
+                        dbc.Button([html.I(className="bi bi-arrow-clockwise"), " Update preview"], id="card_template_preview_update_btn", n_clicks=0, className="w-fit"),
+                        dcc.Store("card_template_config"),
+                    ], width=3, className="flex flex-col gap-1"),
+                ], className="mb-1"),
+            ]), className="h-fit"),
+            dbc.ModalFooter([
+                dbc.Button([html.I(className="bi bi-file-earmark-image"), " Download current"], id="card_download_current_btn", className="ml-auto", n_clicks=0),
+                dbc.Button([html.I(className="bi bi-file-earmark-zip"), " Download all"], id="card_download_all_btn", className="", n_clicks=0)
+            ]),
+        ],
+        id="card_modal",
+        is_open=False,
+        size="xl",
+        scrollable=False
     ),
 ], className="flex flex-col gap-2 p-0")
 
@@ -292,7 +397,7 @@ def change_data(data, children):
 
         row["PlayerUniqueId"] = i + 1
         if row.get("Name", None):
-            name = re.sub(r"\(.*\)", '', unicodedata.normalize('NFC', row["Name"])).strip()
+            name = re.sub(r"\(.*\)", '', unicodedata.normalize('NFC', row["Name"])).strip().replace(",", "")
             name = ' '.join(map(lambda s: s.capitalize(), name.lower().split())).split()
 
             if len(name) == 1:
@@ -362,7 +467,7 @@ def generate_teams_xml(data):
 
 
 @dash.callback(
-    Output("download-text", "data", allow_duplicate=True),
+    Output("download", "data", allow_duplicate=True),
     Input("generate_team", "n_clicks"),
     Input("table_group", "data"),
     prevent_initial_call=True,
@@ -380,7 +485,7 @@ def generate_team(n_clicks, data):
 
 
 @dash.callback(
-    Output("download-text", "data", allow_duplicate=True),
+    Output("download", "data", allow_duplicate=True),
     Output({'type': 'generate_group', 'index': ALL}, 'n_clicks'),
     Input({'type': 'generate_group', 'index': ALL}, 'n_clicks'),
     Input("table", "data"),
@@ -396,7 +501,7 @@ def generate_group(n_clicks, data):
 
 
 @dash.callback(
-    Output("download-text", "data", allow_duplicate=True),
+    Output("download", "data", allow_duplicate=True),
     Input("generate_all", "n_clicks"),
     Input("table", "data"),
     prevent_initial_call=True,
@@ -511,3 +616,386 @@ def import_excel(n_clicks, data):
             del data[col]
 
     return False, data.to_dict('records')
+
+
+@dash.callback(
+    [
+        Output("card_modal", "is_open", allow_duplicate=True),
+        Output("card_template_image_store", "data"),
+        Output("card_preview_select", "options"),
+        Output("card_preview_select", "value"),
+    ],
+    [
+        Input("card_open_btn", "n_clicks"),
+        Input("card_template_upload_btn", "contents"),
+    ],
+    [
+        State("table", "data"),
+        State("card_preview_select", "value"),
+    ],
+    prevent_initial_call=True,
+)
+def toggle_card_modal(n_clicks, template, data, current):
+    if template is None:
+        path = "./static/card_template.png"
+    else:
+        path = f"{TEMP_FOLDER}/{random_string()}.png"
+        base64_to_pil(template).save(path, format="PNG")
+
+    return True, path, [{"label": "------", "value": "0"}] + [
+        {"label": f"Id #{row['PlayerUniqueId']} {row['Lastname']} {row['Firstname']}", "value": row["PlayerUniqueId"]}
+        for row in data if row.get("PlayerUniqueId")
+    ], "0" if dash.ctx.triggered_id == "card_open_btn" else current
+
+
+@dash.callback(
+    Output("card_template_config", "data", allow_duplicate=True),
+    Input("font_upload_btn", "contents"),
+    State("font_upload_btn", "filename"),
+    State("card_template_config", "data"),
+    prevent_initial_call=True,
+)
+def upload_font(contents, filename, data):
+    if not contents:
+        raise PreventUpdate
+
+    if not filename or not filename.lower().endswith(('.ttf', '.otf')):
+        raise PreventUpdate
+
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+
+    font_path = os.path.join(FONTS_FOLDER, filename)
+    with open(font_path, 'wb') as f:
+        f.write(decoded)
+
+    if data is None:
+        data = {}
+
+    data["font"] = font_path
+    print(data)
+    return data
+
+
+clientside_callback(
+    """
+    function(data) {
+        window.jsonEditor.set(data);
+    }
+    """,
+    Input("card_template_config", "data"),
+)
+
+
+clientside_callback(
+    """
+    function(n_clicks) {
+        if (!window.jsonEditor) {
+            return;
+        }
+        const json = window.jsonEditor.get();
+        console.log("JSON data:", json);
+        return {
+            content: JSON.stringify(json, null, 2),
+            filename: "card_template_config.json"
+        };
+    }
+    """,
+    Output("download", "data", allow_duplicate=True),
+    Input("card_template_export_config_btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+clientside_callback(
+    """
+    function(contents) {
+        const base64Data = contents.split(',')[1];
+        const jsonString = decodeURIComponent(Array.from(atob(base64Data)).map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+        const jsonObject = JSON.parse(jsonString);
+        
+        function mergeObject(obj, template) {
+            obj = typeof obj === 'object' && obj !== null ? JSON.parse(JSON.stringify(obj)) : {};
+            for (const [key, value] of Object.entries(template)) {
+                if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                    obj[key] = mergeObject(obj[key] || {}, value);
+                } else {
+                    obj[key] = obj.hasOwnProperty(key) ? obj[key] : value;
+                }
+            }
+            return obj;
+        }
+        
+        const template = window.jsonEditor.get();
+        const mergedJson = mergeObject(jsonObject, template);
+        window.jsonEditor.set(mergedJson);
+        
+        return null;
+    }
+    """,
+    Output("card_template_import_config_btn", "contents"),
+    Input("card_template_import_config_btn", "contents"),
+    prevent_initial_call=True,
+)
+
+
+clientside_callback(
+    """
+    function(n_clicks) {
+        if (!window.jsonEditor) {
+            return;
+        }
+        const json = window.jsonEditor.get();
+        return json;
+    }
+    """,
+    Output('card_template_config', 'data', allow_duplicate=True),
+    Input('card_template_preview_update_btn', "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+clientside_callback(
+    """
+    async function(n_clicks, data) {
+        function waitForElm(selector) {
+            return new Promise(resolve => {
+                if (document.querySelector(selector)) {
+                    return resolve(document.querySelector(selector));
+                }
+        
+                const observer = new MutationObserver(mutations => {
+                    if (document.querySelector(selector)) {
+                        observer.disconnect();
+                        resolve(document.querySelector(selector));
+                    }
+                });
+        
+                // If you get "parameter 1 is not of type 'Node'" error, see https://stackoverflow.com/a/77855838/492336
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            });
+        }
+    
+        if (window.jsonEditor) {
+            window.jsonEditor.destroy();
+        }
+        
+        const container = await waitForElm("#jsoneditor");
+        
+        const options = {
+            mode: "form",
+            search: false,
+            name: "Player Card Config",
+        };
+        const editor = new JSONEditor(container, options);
+
+        const initialJson = {
+            "font": "",
+            "name": {
+                "anchor": "mm",
+                "offsetX": 0,
+                "offsetY": 0,
+                "marginX": 0,
+                "maxFontSize": 80,
+                "color": "#000000",
+                "template": "${Lastname} ${Firstname}",
+            },
+            "club": {
+                "anchor": "mm",
+                "offsetX": 0,
+                "offsetY": 80,
+                "marginX": 0,
+                "maxFontSize": 30,
+                "color": "#000000",
+                "template": "${Club}",
+            },
+            "group": {
+                "anchor": "mm",
+                "offsetX": 0,
+                "offsetY": 30,
+                "marginX": 0,
+                "maxFontSize": 30,
+                "color": "#000000",
+                "template": "Group: ${Group}",
+            },
+            "id": {
+                "anchor": "mm",
+                "offsetX": 100,
+                "offsetY": 30,
+                "marginX": 0,
+                "maxFontSize": 30,
+                "color": "#000000",
+                "template": "${PlayerUniqueId}",
+            },
+        };
+        editor.set(data || initialJson);
+        window.jsonEditor = editor;  // Store the editor in a global variable for later use
+        
+        return editor.get();
+    }
+    """,
+    Output("card_template_config", "data", allow_duplicate=True),
+    Input("card_open_btn", "n_clicks"),
+    State("card_template_config", "data"),
+    prevent_initial_call=True,
+)
+
+
+def draw_text(img: Image, row: dict, config: dict, font: str | None) -> Image:
+    if not row:
+        return img
+    text = Template(config["template"]).render(**{k: "" for k in FIELDS.keys()} | row)
+    if not text:
+        return img
+
+    img = img.copy()
+    d = ImageDraw.Draw(img)
+    center = img.width // 2, img.height // 2
+    center = (
+        center[0] + config["offsetX"],
+        center[1] + config["offsetY"]
+    )
+
+    font_path = font if font else "./Roboto.ttf"
+    font_size = config["maxFontSize"]
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except OSError:
+        font_path = "./Roboto.ttf"
+        font = ImageFont.truetype(font_path, font_size)
+    while d.textlength(text, font) >= (img.width - 2 * config["marginX"]):
+        font_size -= 1
+        font = ImageFont.truetype(font_path, font_size)
+    d.text(center, text, fill=config["color"], anchor="mm", font=font)
+
+    return img
+
+
+@dash.callback(
+    Output("card_preview_image", "src", allow_duplicate=True),
+    Input("card_template_image_store", "data"),
+    Input("card_template_config", "data"),
+    Input("card_preview_select", "value"),
+    State("table", "data"),
+    prevent_initial_call=True,
+)
+def update_card_preview_image(template, config, preview, data):
+    if not template:
+        raise PreventUpdate
+    if not config:
+        image = Image.open(template).convert("RGBA")
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        return f"data:image/png;base64,{img_str}"
+
+    image = Image.open(template).convert("RGBA")
+    overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
+
+    d = ImageDraw.Draw(image)
+    if preview == "0":
+        d.line(((0, image.height // 2), (image.width, image.height // 2)), "gray")
+        d.line(((image.width // 2, 0), (image.width // 2, image.height)), "gray")
+
+    d = ImageDraw.Draw(overlay)
+    for k, value in config.items():
+        if k == "font":
+            continue
+
+        if preview == "0":
+            center = image.width // 2, image.height // 2
+            center = (
+                center[0] + value["offsetX"],
+                center[1] + value["offsetY"]
+            )
+            top_left = (
+                center[0] - (image.width // 2 - value["marginX"]),
+                center[1] - value["maxFontSize"] // 2
+            )
+            bottom_right = (
+                center[0] + (image.width // 2 - value["marginX"]),
+                center[1] + value["maxFontSize"] // 2
+            )
+            d.rectangle(
+                [top_left, bottom_right],
+                fill=(255, 0, 0, 128)
+            )
+        else:
+            row = next((r for r in data if r.get("PlayerUniqueId") == int(preview)), None)
+            overlay = draw_text(overlay, row, value, config.get("font", None))
+
+    image = Image.alpha_composite(image, overlay)
+
+    buffered = BytesIO()
+    image.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    result = f"data:image/png;base64,{img_str}"
+
+    return result
+
+
+@dash.callback(
+    Output("download", "data", allow_duplicate=True),
+    Input("card_download_current_btn", "n_clicks"),
+    Input("card_download_all_btn", "n_clicks"),
+    State("card_template_image_store", "data"),
+    State("card_template_config", "data"),
+    State("table", "data"),
+    State("card_preview_select", "value"),
+    running=[
+        (Output("card_download_current_btn", "disabled"), True, False),
+        (Output("card_download_all_btn", "disabled"), True, False),
+    ],
+    prevent_initial_call=True,
+)
+def download_card(n_clicks_current, n_clicks_all, template, config, data, current):
+    if not template or not config or not data:
+        raise PreventUpdate
+
+    if dash.ctx.triggered_id == "card_download_current_btn":
+        if current == "0":
+            raise PreventUpdate
+
+        row = next((r for r in data if r.get("PlayerUniqueId") == int(current)), None)
+        image = Image.open(template).convert("RGBA")
+        overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
+        for k, value in config.items():
+            if k == "font":
+                continue
+            overlay = draw_text(overlay, row, value, config.get("font", None))
+
+        image = Image.alpha_composite(image, overlay)
+
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        return dcc.send_bytes(
+            buffered.getvalue(),
+            filename=f"player_card_#{row['PlayerUniqueId']}.png"
+        )
+    else:
+        images = []
+        image = Image.open(template).convert("RGBA")
+        for row in data:
+            overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
+            for k, value in config.items():
+                if k == "font":
+                    continue
+                overlay = draw_text(overlay, row, value, config.get("font", None))
+
+            result = Image.alpha_composite(image, overlay)
+
+            buffered = BytesIO()
+            result.save(buffered, format="PNG")
+            images.append((buffered.getvalue(), f"player_card_#{row['PlayerUniqueId']}.png"))
+
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
+            for img_data, filename in images:
+                zip_file.writestr(filename, img_data)
+
+        return dcc.send_bytes(
+            zip_buffer.getvalue(),
+            filename="player_cards.zip"
+        )
