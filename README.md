@@ -6,6 +6,7 @@ This is a helper for [Swiss-Manager](https://swiss-manager.at/), a pairing progr
 - Normalize player names and team names for use in Swiss-Manager.
 - Mapping for short names to full names for teams.
 - Detect duplicate player names.
+- Mako template syntax supported.
 - Generate player cards (WIP need more testing).
 - Calculate team statistics and rankings.
 - QR code generator.

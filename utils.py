@@ -54,3 +54,13 @@ def base64_to_pil(base64_str: str, mode: str = "RGB"):
 
 def random_string(length: int = 10):
     return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
+
+
+def contains_mako_syntax(s):
+    mako_patterns = [
+        r'\$\{.*?\}',      # ${...}
+        r'<%.*?%>',        # <% ... %>
+        r'^\s*%[^\n]+',    # % if ... or % for ... (line-based)
+        r'##.*',           # Mako comment
+    ]
+    return any(re.search(pattern, s, re.MULTILINE | re.DOTALL) for pattern in mako_patterns)

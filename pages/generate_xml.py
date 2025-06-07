@@ -18,7 +18,7 @@ from mako.template import Template
 from toolz import unique
 
 from components.table import table
-from utils import base64_to_pil, random_string
+from utils import base64_to_pil, random_string, contains_mako_syntax
 
 FIELDS = {
     "PlayerUniqueId": "Id",
@@ -106,9 +106,21 @@ layout = dbc.Container([
         start_collapsed=True
     ),
     dbc.Row([
-        dbc.Button("Auto fill group", id="fill_group", n_clicks=0, color="secondary", className="w-fit"),
-        dbc.Button([html.I(className="bi bi-trash"), " Clear"], id="clear_btn", n_clicks=0, color="danger", className="w-fit"),
-    ], className="flex flex-row gap-2 p-0 m-0"),
+        dbc.Row([
+            dbc.Button("Auto fill group", id="fill_group", n_clicks=0, color="secondary", className="w-fit"),
+            dbc.Button([html.I(className="bi bi-trash"), " Clear"], id="clear_btn", n_clicks=0, color="danger", className="w-fit"),
+        ], className="flex flex-row gap-2 p-0 m-0 w-fit"),
+        html.A(html.I(className="bi bi-info-circle w-fit mt-auto", id="info_tooltip_icon"), href="https://docs.makotemplates.org/en/latest/syntax.html", target="_blank", className="w-fit mt-auto"),
+        dbc.Tooltip(
+            [
+                html.P("- Mako syntax supported on all fields except for name.", className="text-left"),
+                html.P("- Example: =${Group.lower()}", className="text-left"),
+                html.P("- The syntax only available when editing the last row and will apply to all row.", className="text-left"),
+                html.P("- Variable name is case insensitive.", className="text-left"),
+            ],
+            target="info_tooltip_icon",
+        ),
+    ], className="flex flex-row gap-2 p-0 m-0 justify-between"),
     table(
         id="table",
         columns=[{
@@ -389,11 +401,10 @@ def fill_federation(n_clicks, data_group, data):
 def change_data(data, children):
     group = set()
 
-    data = [row for row in data if row.get("Name", None)]
     name_dict = dict()
     for i, row in enumerate(data):
         for k, v in row.items():
-            row[k] = v.strip() if isinstance(v, str) else v
+            row[k] = v.strip().replace("\n", " ") if isinstance(v, str) else v
 
         row["PlayerUniqueId"] = i + 1
         if row.get("Name", None):
@@ -416,6 +427,19 @@ def change_data(data, children):
 
         if row.get("Group", None):
             group.add(row["Group"])
+
+    if len(data) > 1:
+        for k, v in data[-1].items():
+            v = str(v)
+            if v.startswith("=") and contains_mako_syntax(str(v)) and k not in ("Name", "Lastname", "Firstname"):
+                v = v[1:]
+                for row in data[:-1]:
+                    try:
+                        row[k] = Template(v).render(**(row | {k.lower(): v for k, v in row.items()}))
+                    except NameError:
+                        pass
+
+    data = [row for row in data if row.get("Name", None)]
 
     if not data:
         data = [{"": 1}]
