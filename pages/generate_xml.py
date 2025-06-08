@@ -243,7 +243,7 @@ layout = dbc.Container([
                                     {"label": "Id #1", "value": "1"},
                                 ],
                             )
-                        ], className="w-fit"),
+                        ], className=""),
                         dbc.Button([html.I(className="bi bi-arrow-clockwise"), " Update preview"], id="card_template_preview_update_btn", n_clicks=0, className="w-fit"),
                         dcc.Store("card_template_config"),
                     ], className="flex flex-col gap-1"),
@@ -832,6 +832,8 @@ clientside_callback(
                 "maxWidth": 500,
                 "maxFontSize": 80,
                 "maxWidthCompensate": 1,
+                "offsetXCompensate": 1,
+                "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "${Lastname} ${Firstname}",
             },
@@ -842,6 +844,8 @@ clientside_callback(
                 "maxWidth": 400,
                 "maxFontSize": 30,
                 "maxWidthCompensate": 1,
+                "offsetXCompensate": 1,
+                "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "${Club}",
             },
@@ -852,6 +856,8 @@ clientside_callback(
                 "maxWidth": 400,
                 "maxFontSize": 30,
                 "maxWidthCompensate": 1,
+                "offsetXCompensate": 1,
+                "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "Group: ${Group}",
             },
@@ -862,6 +868,8 @@ clientside_callback(
                 "maxWidth": 100,
                 "maxFontSize": 30,
                 "maxWidthCompensate": 1,
+                "offsetXCompensate": 1,
+                "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "${PlayerUniqueId}",
             },
@@ -871,8 +879,8 @@ clientside_callback(
             mode: "form",
             search: false,
             name: "Player Card Config",
-            onClassName: ({ path, field, value }) => {
-                console.log("onClassName", path, field, value);
+            onNodeName: function ({ path, type, size, value }) {
+                return ` `;
             }
         };
         const editor = new JSONEditor(container, options);
@@ -902,11 +910,6 @@ def draw_text(img: Image, row: dict, config: dict, font: str | None) -> Image:
     img = img.copy()
     config = copy.deepcopy(config)
     d = ImageDraw.Draw(img)
-    center = img.width // 2, img.height // 2
-    center = (
-        center[0] + config["offsetX"],
-        center[1] + config["offsetY"]
-    )
 
     font_path = font if font else "./Roboto.ttf"
     font_size = config["maxFontSize"]
@@ -917,8 +920,16 @@ def draw_text(img: Image, row: dict, config: dict, font: str | None) -> Image:
         font = ImageFont.truetype(font_path, font_size)
     while d.textlength(text, font) >= config["maxWidth"]:
         font_size -= 1
-        config["maxWidth"] = int(config["maxWidth"] * config["maxWidthCompensate"])
+        config["maxWidth"] = config["maxWidth"] * config["maxWidthCompensate"]
+        config["offsetX"] = config["offsetX"] * config["offsetXCompensate"]
+        config["offsetY"] = config["offsetY"] * config["offsetYCompensate"]
         font = ImageFont.truetype(font_path, font_size)
+
+    center = img.width // 2, img.height // 2
+    center = (
+        center[0] + config["offsetX"],
+        center[1] + config["offsetY"]
+    )
     try:
         d.text(center, text, fill=Template(config["color"]).render(**generate_name(row)), anchor=config["anchor"], font=font)
     except NameError:
