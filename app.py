@@ -5,8 +5,16 @@ from dash_extensions.enrich import DashProxy
 
 app = DashProxy(
     __name__,
-    external_scripts=['https://cdn.tailwindcss.com', 'https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.3/jsoneditor.min.js'],
-    external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.BOOTSTRAP, 'https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.3/jsoneditor.min.css'],
+    external_scripts=[
+        'https://cdn.tailwindcss.com',
+        'https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.3/jsoneditor.min.js',
+        'https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js'
+    ],
+    external_stylesheets=[
+        dbc.themes.BOOTSTRAP,
+        dbc.icons.BOOTSTRAP,
+        'https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.3/jsoneditor.min.css'
+    ],
     use_pages=True,
 )
 

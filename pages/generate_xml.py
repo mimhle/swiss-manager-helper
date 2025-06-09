@@ -234,7 +234,7 @@ layout = dbc.Container([
                             ),
                             dbc.Button([html.I(className="bi bi-box-arrow-up-left"), " Export config"], id="card_template_export_config_btn", n_clicks=0, className="w-fit", size="sm", color="secondary"),
                         ], className="flex flex-row gap-1 m-0"),
-                        html.Div(id="jsoneditor", className="w-full h-60"),
+                        html.Div(id="jsoneditor", className="w-full h-full"),
                         dbc.InputGroup([
                             dbc.InputGroupText("Preview"),
                             dbc.Select(
@@ -246,8 +246,8 @@ layout = dbc.Container([
                         ], className=""),
                         dbc.Button([html.I(className="bi bi-arrow-clockwise"), " Update preview"], id="card_template_preview_update_btn", n_clicks=0, className="w-fit"),
                         dcc.Store("card_template_config"),
-                    ], className="flex flex-col gap-1"),
-                ], className="mb-1"),
+                    ], className="flex flex-col gap-1 overflow-hidden h-fit", id="resize-drag"),
+                ], className="mb-1 h-full"),
             ]), className="h-fit"),
             dbc.ModalFooter([
                 dbc.Button([html.I(className="bi bi-file-earmark-image"), " Download current"], id="card_download_current_btn", className="ml-auto", n_clicks=0),
@@ -716,7 +716,7 @@ def upload_font(contents, filename, data):
 clientside_callback(
     """
     function(data) {
-        window.jsonEditor.set(data);
+        window.jsonEditor.update(data);
     }
     """,
     Input("card_template_config", "data"),
@@ -751,19 +751,20 @@ clientside_callback(
         
         function mergeObject(obj, template) {
             obj = typeof obj === 'object' && obj !== null ? JSON.parse(JSON.stringify(obj)) : {};
+            const result = {};
             for (const [key, value] of Object.entries(template)) {
                 if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                    obj[key] = mergeObject(obj[key] || {}, value);
+                    result[key] = mergeObject(obj[key] || {}, value);
                 } else {
-                    obj[key] = obj.hasOwnProperty(key) ? obj[key] : value;
+                    result[key] = obj.hasOwnProperty(key) ? obj[key] : value;
                 }
             }
-            return obj;
+            return result;
         }
         
         const template = window.jsonEditor.get();
         const mergedJson = mergeObject(jsonObject, template);
-        window.jsonEditor.set(mergedJson);
+        window.jsonEditor.update(mergedJson);
         
         return [
             null,
@@ -836,6 +837,7 @@ clientside_callback(
                 "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "${Lastname} ${Firstname}",
+                "groupId": "",
             },
             "club": {
                 "anchor": "mm",
@@ -848,6 +850,7 @@ clientside_callback(
                 "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "${Club}",
+                "groupId": "",
             },
             "group": {
                 "anchor": "mm",
@@ -860,6 +863,7 @@ clientside_callback(
                 "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "Group: ${Group}",
+                "groupId": "",
             },
             "id": {
                 "anchor": "mm",
@@ -872,21 +876,73 @@ clientside_callback(
                 "offsetYCompensate": 1,
                 "color": "#000000",
                 "template": "${PlayerUniqueId}",
+                "groupId": "",
             },
         };
+        
+        const schema = {
+            "type": "object",
+            "properties": {
+                "font": {
+                    "type": "string"
+                },
+                "name": { "$ref": "#/definitions/labelBlock" },
+                "club": { "$ref": "#/definitions/labelBlock" },
+                "group": { "$ref": "#/definitions/labelBlock" },
+                "id": { "$ref": "#/definitions/labelBlock" }
+            },
+            "definitions": {
+                "labelBlock": {
+                    "type": "object",
+                    "properties": {
+                        "anchor": {
+                            "type": "string",
+                            "enum": [
+                                "mm", "ma", "mt", "ms", "mb", "md",
+                                "lm", "la", "lt", "ls", "lb", "ld",
+                                "rm", "ra", "rt", "rs", "rb", "rd",
+                            ],
+                        },
+                    },
+                }
+            }
+        }
         
         const options = {
             mode: "form",
             search: false,
             name: "Player Card Config",
+            schema: schema,
             onNodeName: function ({ path, type, size, value }) {
                 return ` `;
             }
         };
         const editor = new JSONEditor(container, options);
-        editor.set(data || initialJson);
+        editor.update(data || initialJson);
         window.jsonEditor = editor;  // Store the editor in a global variable for later use
         
+        interact('#resize-drag')
+          .resizable({
+            // resize from all edges and corners
+            edges: { left: false, right: false, bottom: true, top: false },
+            listeners: {
+              move: function (event) {
+                let { x, y } = event.target.dataset
+        
+                x = (parseFloat(x) || 0) + event.deltaRect.left
+                y = (parseFloat(y) || 0) + event.deltaRect.top
+        
+                Object.assign(event.target.style, {
+                  width: `${event.rect.width}px`,
+                  height: `${event.rect.height}px`,
+                  transform: `translate(${x}px, ${y}px)`
+                })
+        
+                Object.assign(event.target.dataset, { x, y })
+              }
+            },
+            inertia: true
+          })
         return editor.get();
     }
     """,
@@ -966,6 +1022,10 @@ def update_card_preview_image(template, config, preview, data):
         d.line(((image.width // 2, 0), (image.width // 2, image.height)), "gray")
 
     d = ImageDraw.Draw(overlay)
+
+    groups = {}
+    if not config.get("font", None):
+        config["font"] = "./Roboto.ttf"
     for k, value in config.items():
         if k == "font":
             continue
@@ -976,23 +1036,36 @@ def update_card_preview_image(template, config, preview, data):
                 center[0] + value["offsetX"],
                 center[1] + value["offsetY"]
             )
-            top_left = (
-                center[0] - value["maxWidth"] // 2,
-                center[1] - value["maxFontSize"] // 2
-            )
-            bottom_right = (
-                center[0] + value["maxWidth"] // 2,
-                center[1] + value["maxFontSize"] // 2
-            )
+            text = ""
+            font = ImageFont.truetype(config["font"], value["maxFontSize"])
+            while d.textlength(text, font) < value["maxWidth"]:
+                text += "A"
+            left, top, right, bottom = d.textbbox(center, text, font=font, anchor=value["anchor"])
             color = re.search(pattern, value["color"])
             d.rectangle(
-                [top_left, bottom_right],
+                [left, top, right, bottom],
                 fill=hex_to_rgb(color.group() if color else "#000000") + (128,),
                 outline=hex_to_rgb(color.group() if color else "#000000")
             )
+            if value.get("groupId", None):
+                groups.setdefault(value["groupId"], []).append((left, top, right, bottom))
         else:
             row = next((r for r in data if r.get("PlayerUniqueId") == int(preview)), None)
             overlay = draw_text(overlay, row, value, config.get("font", None))
+
+    for group in groups.values():
+        if preview != "0" or len(group) == 1:
+            continue
+        if len(group) > 1:
+            left = min(x[0] for x in group)
+            top = min(x[1] for x in group)
+            right = max(x[2] for x in group)
+            bottom = max(x[3] for x in group)
+            d.rectangle(
+                [left, top, right, bottom],
+                outline="red",
+                width=3
+            )
 
     image = Image.alpha_composite(image, overlay).convert("RGB")
     image.thumbnail((1200, 1200))
