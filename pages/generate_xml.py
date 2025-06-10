@@ -234,7 +234,7 @@ layout = dbc.Container([
                             ),
                             dbc.Button([html.I(className="bi bi-box-arrow-up-left"), " Export config"], id="card_template_export_config_btn", n_clicks=0, className="w-fit", size="sm", color="secondary"),
                         ], className="flex flex-row gap-1 m-0"),
-                        html.Div(id="jsoneditor", className="w-full h-full"),
+                        html.Div(id="jsoneditor", className="w-full h-96"),
                         dbc.InputGroup([
                             dbc.InputGroupText("Preview"),
                             dbc.Select(
@@ -246,8 +246,8 @@ layout = dbc.Container([
                         ], className=""),
                         dbc.Button([html.I(className="bi bi-arrow-clockwise"), " Update preview"], id="card_template_preview_update_btn", n_clicks=0, className="w-fit"),
                         dcc.Store("card_template_config"),
-                    ], className="flex flex-col gap-1 overflow-hidden h-fit", id="resize-drag"),
-                ], className="mb-1 h-full"),
+                    ], className="flex flex-col gap-1 overflow-hidden h-fit"),
+                ], className="mb-1"),
             ]), className="h-fit"),
             dbc.ModalFooter([
                 dbc.Button([html.I(className="bi bi-file-earmark-image"), " Download current"], id="card_download_current_btn", className="ml-auto", n_clicks=0),
@@ -921,28 +921,6 @@ clientside_callback(
         editor.update(data || initialJson);
         window.jsonEditor = editor;  // Store the editor in a global variable for later use
         
-        interact('#resize-drag')
-          .resizable({
-            // resize from all edges and corners
-            edges: { left: false, right: false, bottom: true, top: false },
-            listeners: {
-              move: function (event) {
-                let { x, y } = event.target.dataset
-        
-                x = (parseFloat(x) || 0) + event.deltaRect.left
-                y = (parseFloat(y) || 0) + event.deltaRect.top
-        
-                Object.assign(event.target.style, {
-                  width: `${event.rect.width}px`,
-                  height: `${event.rect.height}px`,
-                  transform: `translate(${x}px, ${y}px)`
-                })
-        
-                Object.assign(event.target.dataset, { x, y })
-              }
-            },
-            inertia: true
-          })
         return editor.get();
     }
     """,
