@@ -22,6 +22,8 @@ from toolz import unique
 from components.table import table
 from utils import base64_to_pil, random_string, hex_to_rgb
 
+from datetime import datetime
+
 FIELDS = {
     "PlayerUniqueId": "Id",
     "Name": "Name",
@@ -44,6 +46,10 @@ if not os.path.exists(TEMP_FOLDER):
     os.makedirs(TEMP_FOLDER)
 if not os.path.exists(FONTS_FOLDER):
     os.makedirs(FONTS_FOLDER)
+
+GLOBAL_CONTEXT = {
+    "datetime": datetime,
+}
 
 dash.register_page(
     __name__,
@@ -159,10 +165,23 @@ layout = dbc.Container([
     dbc.Modal(
         [
             dbc.ModalHeader(dbc.ModalTitle("Import from Excel"),),
-            dbc.ModalBody("", id="excel_import_modal_body"),
-            dbc.ModalFooter(
-                dbc.Button("Import", id="excel_import_btn", className="ml-auto", n_clicks=0)
-            ),
+            dbc.ModalBody([
+                dbc.InputGroup([
+                    dbc.InputGroupText("Sheet:"),
+                    dbc.Select(
+                        id="excel_sheet_select",
+                        options=[
+                            {"label": "Sheet1", "value": "Sheet1"},
+                        ],
+                        value="Sheet1",
+                    ),
+                ], className="mb-2"),
+                html.Div(id="excel_import_modal_body", className=""),
+            ]),
+            dbc.ModalFooter([
+                dbc.Button("Import and append", id="excel_import_append_btn", className="", n_clicks=0),
+                dbc.Button("Import and replace", id="excel_import_btn", className="", n_clicks=0),
+            ], className="flex flex-row gap-2 justify-end"),
         ],
         id="excel_import_modal",
         is_open=False,
@@ -246,7 +265,7 @@ layout = dbc.Container([
                         ], className=""),
                         dbc.Button([html.I(className="bi bi-arrow-clockwise"), " Update preview"], id="card_template_preview_update_btn", n_clicks=0, className="w-fit"),
                         dcc.Store("card_template_config"),
-                    ], className="flex flex-col gap-1 overflow-hidden h-fit"),
+                    ], className="flex flex-col gap-1 h-fit"),
                 ], className="mb-1"),
             ]), className="h-fit"),
             dbc.ModalFooter([
@@ -431,9 +450,6 @@ def change_data(data, children):
         else:
             name_dict[f"{row['Lastname']} {row['Firstname']}"] = row
 
-        if row.get("Group", None):
-            group.add(row["Group"])
-
     if len(data) > 1:
         for k, v in data[-1].items():
             v = str(v)
@@ -441,15 +457,21 @@ def change_data(data, children):
                 v = v[1:]
                 for row in data[:-1]:
                     try:
-                        row[k] = Template(v).render(**generate_name(row))
-                    except (NameError, mako.exceptions.SyntaxException) as e:
-                        if isinstance(e, mako.exceptions.SyntaxException) or "Undefined" in str(e):
-                            try:
-                                row[k] = Template(v + "}").render(**generate_name(row))
-                            except (NameError, mako.exceptions.SyntaxException):
+                        row[k] = Template(v).render(**generate_name(row), **GLOBAL_CONTEXT)
+                    except Exception:
+                        try:
+                            row[k] = Template(v + "}").render(**generate_name(row), **GLOBAL_CONTEXT)
+                        except Exception as e:
+                            if "NameError" in str(e) or "SyntaxException" in str(e):
                                 row[k] = v
+                            else:
+                                row[k] = "#ERROR"
+                                raise e
 
     data = [row for row in data if row.get("Name", None)]
+    for row in data:
+        if row.get("Group", None):
+            group.add(row["Group"])
 
     if not data:
         data = [{"": 1}]
@@ -549,10 +571,10 @@ def download_text(n_clicks, data):
     return dict(content=pretty_xml_as_string, filename="output.xml")
 
 
-def read_excel(content: str) -> pd.DataFrame:
+def read_excel(content: str, sheet: str | None) -> pd.DataFrame | dict[str, pd.DataFrame]:
     content_type, content_string = content.split(',')
     decoded = base64.b64decode(content_string)
-    df = pd.read_excel(BytesIO(decoded))
+    df = pd.read_excel(BytesIO(decoded), sheet_name=sheet)
     return df
 
 
@@ -560,15 +582,26 @@ def read_excel(content: str) -> pd.DataFrame:
     [
         Output("excel_import_modal", "is_open", allow_duplicate=True),
         Output("excel_import_modal_body", "children"),
-        Output("excel_upload_btn", "contents")
+        Output("excel_sheet_select", "options"),
+        Output("excel_sheet_select", "value"),
     ],
-    [Input("excel_upload_btn", "contents")],
+    [
+        Input("excel_upload_btn", "contents"),
+        Input("excel_sheet_select", "value"),
+    ],
     prevent_initial_call=True,
 )
-def toggle_excel_import_modal(contents):
+def toggle_excel_import_modal(contents, sheet):
     if not contents:
         raise PreventUpdate
-    data = read_excel(contents)
+    data = read_excel(contents, None)
+    sheets = tuple(data.keys())
+    if sheet in data.keys():
+        data = data[sheet]
+    else:
+        sheet = sheets[0]
+        data = data[sheet]
+
     empty_row = pd.DataFrame([None] * len(data.columns), index=data.columns).T
     data = pd.concat([empty_row, data], ignore_index=True)
     data.reset_index(inplace=True)
@@ -588,7 +621,7 @@ def toggle_excel_import_modal(contents):
             filter_action="none",
             sort_action="none",
             row_selectable=False,
-            row_deletable=False,
+            row_deletable=True,
             page_current=0,
             page_size=999,
             style_cell={'textAlign': 'left'},
@@ -601,10 +634,6 @@ def toggle_excel_import_modal(contents):
                 'height': 'auto',
             },
             style_data_conditional=[
-                {
-                    "if": {"filter_query": "{No} ne 0"},
-                    "pointerEvents": "none",
-                },
                 {
                     "if": {"filter_query": "{No} eq 0"},
                     "backgroundColor": "#f2f2f2",
@@ -620,8 +649,20 @@ def toggle_excel_import_modal(contents):
                 'options': [{'label': v, 'value': v} for k, v in FIELDS.items() if k not in ("PlayerUniqueId", "Firstname", "Lastname")],
             } for col in data.columns if col != "No"],
         ),
-        None
+        [{"label": sheet, "value": sheet} for sheet in sheets],
+        sheet if sheet in sheets else sheets[0],
     )
+
+
+@dash.callback(
+    Output("excel_upload_btn", "contents"),
+    Input("excel_import_modal", "is_open"),
+)
+def close_excel_import_modal(is_open):
+    if is_open:
+        raise PreventUpdate
+
+    return None
 
 
 @dash.callback(
@@ -629,11 +670,17 @@ def toggle_excel_import_modal(contents):
         Output("excel_import_modal", "is_open", allow_duplicate=True),
         Output("table", "data", allow_duplicate=True),
     ],
-    Input("excel_import_btn", "n_clicks"),
-    State({'type': 'import_table', 'index': ALL}, "data"),
+    [
+        Input("excel_import_btn", "n_clicks"),
+        Input("excel_import_append_btn", "n_clicks"),
+    ],
+    [
+        State({'type': 'import_table', 'index': ALL}, "data"),
+        State("table", "data")
+    ],
     prevent_initial_call=True,
 )
-def import_excel(n_clicks, data):
+def import_excel(n_clicks, n_clicks2, data, table_data):
     if not data or not data[0]:
         raise PreventUpdate
 
@@ -651,7 +698,12 @@ def import_excel(n_clicks, data):
         else:
             del data[col]
 
-    return False, data.to_dict('records')
+    if dash.ctx.triggered_id == "excel_import_btn":
+        data = data.to_dict('records')
+    else:
+        data = pd.DataFrame(table_data + data.to_dict('records'))
+        data = data.to_dict('records')
+    return False, data
 
 
 @dash.callback(
@@ -708,8 +760,7 @@ def upload_font(contents, filename, data):
     if data is None:
         data = {}
 
-    data["font"] = font_path
-    print(data)
+    data["config"]["font"] = font_path
     return data
 
 
@@ -825,7 +876,13 @@ clientside_callback(
         
         const container = await waitForElm("#jsoneditor");
         const initialJson = {
-            "font": "",
+            "config": {
+                "font": "",
+                "scale": {
+                    "width": 0,
+                    "height": 0,
+                },
+            },
             "name": {
                 "anchor": "mm",
                 "offsetX": 0,
@@ -883,8 +940,22 @@ clientside_callback(
         const schema = {
             "type": "object",
             "properties": {
-                "font": {
-                    "type": "string"
+                "config": {
+                    "type": "object",
+                    "properties": {
+                        "font": { "type": "string" },
+                        "scale": {
+                            "type": "object",
+                            "properties": {
+                                "width": { "type": "number", "default": 0 },
+                                "height": { "type": "number", "default": 0 },
+                            },
+                            "default": {
+                                "width": 0,
+                                "height": 0,
+                            }
+                        },
+                    },
                 },
                 "name": { "$ref": "#/definitions/labelBlock" },
                 "club": { "$ref": "#/definitions/labelBlock" },
@@ -931,43 +1002,43 @@ clientside_callback(
 )
 
 
-def draw_text(img: Image, row: dict, config: dict, font: str | None) -> Image:
+def draw_text(img: Image, row: dict, row_config: dict, config: dict) -> Image:
     if not row:
         return img
     try:
-        text = Template(config["template"]).render(**generate_name(row))
+        text = Template(row_config["template"]).render(**generate_name(row))
     except NameError:
-        text = config["template"]
+        text = row_config["template"]
     if not text:
         return img
 
     img = img.copy()
-    config = copy.deepcopy(config)
+    row_config = copy.deepcopy(row_config)
     d = ImageDraw.Draw(img)
 
-    font_path = font if font else "./Roboto.ttf"
-    font_size = config["maxFontSize"]
+    font_path = config["font"] if config.get("font", None) else "./Roboto.ttf"
+    font_size = row_config["maxFontSize"]
     try:
         font = ImageFont.truetype(font_path, font_size)
     except OSError:
         font_path = "./Roboto.ttf"
         font = ImageFont.truetype(font_path, font_size)
-    while d.textlength(text, font) >= config["maxWidth"]:
+    while d.textlength(text, font) >= row_config["maxWidth"]:
         font_size -= 1
-        config["maxWidth"] = config["maxWidth"] * config["maxWidthCompensate"]
-        config["offsetX"] = config["offsetX"] * config["offsetXCompensate"]
-        config["offsetY"] = config["offsetY"] * config["offsetYCompensate"]
+        row_config["maxWidth"] = row_config["maxWidth"] * row_config["maxWidthCompensate"]
+        row_config["offsetX"] = row_config["offsetX"] * row_config["offsetXCompensate"]
+        row_config["offsetY"] = row_config["offsetY"] * row_config["offsetYCompensate"]
         font = ImageFont.truetype(font_path, font_size)
 
     center = img.width // 2, img.height // 2
     center = (
-        center[0] + config["offsetX"],
-        center[1] + config["offsetY"]
+        center[0] + row_config["offsetX"],
+        center[1] + row_config["offsetY"]
     )
     try:
-        d.text(center, text, fill=Template(config["color"]).render(**generate_name(row)), anchor=config["anchor"], font=font)
+        d.text(center, text, fill=Template(row_config["color"]).render(**generate_name(row)), anchor=row_config["anchor"], font=font)
     except NameError:
-        d.text(center, text, fill="#000000", anchor=config["anchor"], font=font)
+        d.text(center, text, fill="#000000", anchor=row_config["anchor"], font=font)
 
     return img
 
@@ -991,6 +1062,12 @@ def update_card_preview_image(template, config, preview, data):
         return f"data:image/png;base64,{img_str}"
 
     image = Image.open(template).convert("RGBA")
+    if config["config"]["scale"]["width"] > 0 and config["config"]["scale"]["height"] > 0:
+        image = image.resize((config["config"]["scale"]["width"], config["config"]["scale"]["height"]), Image.LANCZOS)
+    elif config["config"]["scale"]["width"] > 0:
+        image.thumbnail((config["config"]["scale"]["width"], image.height), Image.LANCZOS)
+    elif config["config"]["scale"]["height"] > 0:
+        image.thumbnail((image.width, config["config"]["scale"]["height"]), Image.LANCZOS)
     overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
     pattern = r'#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{8})\b'
 
@@ -1002,10 +1079,10 @@ def update_card_preview_image(template, config, preview, data):
     d = ImageDraw.Draw(overlay)
 
     groups = {}
-    if not config.get("font", None):
-        config["font"] = "./Roboto.ttf"
+    if not config["config"].get("font", None):
+        config["config"]["font"] = "./Roboto.ttf"
     for k, value in config.items():
-        if k == "font":
+        if k == "config":
             continue
 
         if preview == "0":
@@ -1015,7 +1092,7 @@ def update_card_preview_image(template, config, preview, data):
                 center[1] + value["offsetY"]
             )
             text = ""
-            font = ImageFont.truetype(config["font"], value["maxFontSize"])
+            font = ImageFont.truetype(config["config"]["font"], value["maxFontSize"])
             while d.textlength(text, font) < value["maxWidth"]:
                 text += "A"
             left, top, right, bottom = d.textbbox(center, text, font=font, anchor=value["anchor"])
@@ -1029,7 +1106,7 @@ def update_card_preview_image(template, config, preview, data):
                 groups.setdefault(value["groupId"], []).append((left, top, right, bottom))
         else:
             row = next((r for r in data if r.get("PlayerUniqueId") == int(preview)), None)
-            overlay = draw_text(overlay, row, value, config.get("font", None))
+            overlay = draw_text(overlay, row, value, config["config"])
 
     for group in groups.values():
         if preview != "0" or len(group) == 1:
@@ -1082,9 +1159,9 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
         image = Image.open(template).convert("RGBA")
         overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
         for k, value in config.items():
-            if k == "font":
+            if k == "config":
                 continue
-            overlay = draw_text(overlay, row, value, config.get("font", None))
+            overlay = draw_text(overlay, row, value, config["config"])
 
         image = Image.alpha_composite(image, overlay)
 
@@ -1100,9 +1177,9 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
         for row in data:
             overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
             for k, value in config.items():
-                if k == "font":
+                if k == "config":
                     continue
-                overlay = draw_text(overlay, row, value, config.get("font", None))
+                overlay = draw_text(overlay, row, value, config["config"])
 
             result = Image.alpha_composite(image, overlay)
 

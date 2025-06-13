@@ -2,6 +2,15 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
 from dash_extensions.enrich import DashProxy
+from flask import Flask, redirect
+
+server = Flask(__name__)
+
+
+@server.route('/')
+def redirect_root():
+    return redirect('/xml')
+
 
 app = DashProxy(
     __name__,
@@ -15,6 +24,7 @@ app = DashProxy(
         'https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.3/jsoneditor.min.css'
     ],
     use_pages=True,
+    server=server
 )
 
 server = app.server
