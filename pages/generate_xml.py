@@ -10,7 +10,6 @@ from operator import itemgetter
 
 import dash
 import dash_bootstrap_components as dbc
-import mako
 import pandas as pd
 import unicodedata
 from PIL import Image, ImageDraw, ImageFont
@@ -37,6 +36,7 @@ FIELDS = {
     "FIDEId": "FIDE Id",
     "Club": "Club",
     "TeamUniqueId": "Team Id",
+    "Type": "Type",
 }
 
 TEMP_FOLDER = "./temp"
@@ -61,6 +61,7 @@ layout = dbc.Container([
         dbc.Button([html.I(className="bi bi-box-arrow-in-down-right"), " Import from Excel"], className="w-fit"),
         id="excel_upload_btn",
         accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel",
+        className="w-fit",
     ),
     dbc.Accordion(
         [
@@ -150,7 +151,7 @@ layout = dbc.Container([
                     'filter_query': '{duplicate} = "true"',
                 },
                 'backgroundColor': '#f2ff0030',
-            }
+            },
         ]
     ),
     dbc.Row([
@@ -701,8 +702,9 @@ def import_excel(n_clicks, n_clicks2, data, table_data):
     if dash.ctx.triggered_id == "excel_import_btn":
         data = data.to_dict('records')
     else:
-        data = pd.DataFrame(table_data + data.to_dict('records'))
-        data = data.to_dict('records')
+        data = table_data + data.to_dict('records')
+        if data[0] == {"": 1}:
+            data = data[1:]
     return False, data
 
 
@@ -895,6 +897,20 @@ clientside_callback(
                 "color": "#000000",
                 "template": "${Lastname} ${Firstname}",
                 "groupId": "",
+                "border": {
+                    "strokeWeight": 0,
+                    "color": "#000000",
+                    "fill": "",
+                    "radius": 0,
+                    "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0,
+                    },
+                    "minWidth": 0,
+                    "minHeight": 0,
+                },
             },
             "club": {
                 "anchor": "mm",
@@ -908,6 +924,20 @@ clientside_callback(
                 "color": "#000000",
                 "template": "${Club}",
                 "groupId": "",
+                "border": {
+                    "strokeWeight": 0,
+                    "color": "#000000",
+                    "fill": "",
+                    "radius": 0,
+                    "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0,
+                    },
+                    "minWidth": 0,
+                    "minHeight": 0,
+                },
             },
             "group": {
                 "anchor": "mm",
@@ -921,6 +951,20 @@ clientside_callback(
                 "color": "#000000",
                 "template": "Group: ${Group}",
                 "groupId": "",
+                "border": {
+                    "strokeWeight": 0,
+                    "color": "#000000",
+                    "fill": "",
+                    "radius": 0,
+                    "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0,
+                    },
+                    "minWidth": 0,
+                    "minHeight": 0,
+                },
             },
             "id": {
                 "anchor": "mm",
@@ -934,6 +978,20 @@ clientside_callback(
                 "color": "#000000",
                 "template": "${PlayerUniqueId}",
                 "groupId": "",
+                "border": {
+                    "strokeWeight": 0,
+                    "color": "#000000",
+                    "fill": "",
+                    "radius": 0,
+                    "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0,
+                    },
+                    "minWidth": 0,
+                    "minHeight": 0,
+                },
             },
         };
         
@@ -1011,6 +1069,7 @@ def draw_text(img: Image, row: dict, row_config: dict, config: dict) -> Image:
         text = row_config["template"]
     if not text:
         return img
+    text = unicodedata.normalize('NFC', text)
 
     img = img.copy()
     row_config = copy.deepcopy(row_config)
@@ -1035,8 +1094,50 @@ def draw_text(img: Image, row: dict, row_config: dict, config: dict) -> Image:
         center[0] + row_config["offsetX"],
         center[1] + row_config["offsetY"]
     )
+
+    if row_config["border"]["strokeWeight"] > 0:
+        left, top, right, bottom = d.textbbox(center, text, font=font, anchor=row_config["anchor"])
+        color = Template(row_config["border"]["color"]).render(**generate_name(row), **GLOBAL_CONTEXT)
+        box = [
+            left - row_config["border"]["padding"]["left"],
+            top - row_config["border"]["padding"]["top"],
+            right + row_config["border"]["padding"]["right"],
+            bottom + row_config["border"]["padding"]["bottom"]
+        ]
+
+        if row_config["border"]["minWidth"] > 0 and (box[2] - box[0]) < row_config["border"]["minWidth"]:
+            min_width = row_config["border"]["minWidth"]
+            if row_config["anchor"][0] == "l":
+                box[2] += min_width - (box[2] - box[0])
+            elif row_config["anchor"][0] == "r":
+                box[0] -= min_width - (box[2] - box[0])
+            else:
+                center_x = (box[0] + box[2]) // 2
+                half_width = min_width // 2
+                box[0] = center_x - half_width
+                box[2] = center_x + (min_width - half_width)
+        if row_config["border"]["minHeight"] > 0 and (box[3] - box[1]) < row_config["border"]["minHeight"]:
+            min_height = row_config["border"]["minHeight"]
+            if row_config["anchor"][1] == "t":
+                box[3] += min_height - (box[3] - box[1])
+            elif row_config["anchor"][1] == "b":
+                box[1] -= min_height - (box[3] - box[1])
+            else:
+                center_y = (box[1] + box[3]) // 2
+                half_height = min_height // 2
+                box[1] = center_y - half_height
+                box[3] = center_y + (min_height - half_height)
+
+        d.rounded_rectangle(
+            box,
+            outline=color,
+            width=row_config["border"]["strokeWeight"],
+            fill=None if not row_config["border"]["fill"] else Template(row_config["border"]["fill"]).render(**generate_name(row), **GLOBAL_CONTEXT),
+            radius=row_config["border"]["radius"]
+        )
+
     try:
-        d.text(center, text, fill=Template(row_config["color"]).render(**generate_name(row)), anchor=row_config["anchor"], font=font)
+        d.text(center, text, fill=Template(row_config["color"]).render(**generate_name(row), **GLOBAL_CONTEXT), anchor=row_config["anchor"], font=font)
     except NameError:
         d.text(center, text, fill="#000000", anchor=row_config["anchor"], font=font)
 
@@ -1063,11 +1164,11 @@ def update_card_preview_image(template, config, preview, data):
 
     image = Image.open(template).convert("RGBA")
     if config["config"]["scale"]["width"] > 0 and config["config"]["scale"]["height"] > 0:
-        image = image.resize((config["config"]["scale"]["width"], config["config"]["scale"]["height"]), Image.LANCZOS)
+        image = image.resize((config["config"]["scale"]["width"], config["config"]["scale"]["height"]))
     elif config["config"]["scale"]["width"] > 0:
-        image.thumbnail((config["config"]["scale"]["width"], image.height), Image.LANCZOS)
+        image.thumbnail((config["config"]["scale"]["width"], image.height))
     elif config["config"]["scale"]["height"] > 0:
-        image.thumbnail((image.width, config["config"]["scale"]["height"]), Image.LANCZOS)
+        image.thumbnail((image.width, config["config"]["scale"]["height"]))
     overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
     pattern = r'#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{8})\b'
 
@@ -1151,12 +1252,18 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
     if not template or not config or not data:
         raise PreventUpdate
 
+    image = Image.open(template).convert("RGBA")
+    if config["config"]["scale"]["width"] > 0 and config["config"]["scale"]["height"] > 0:
+        image = image.resize((config["config"]["scale"]["width"], config["config"]["scale"]["height"]))
+    elif config["config"]["scale"]["width"] > 0:
+        image.thumbnail((config["config"]["scale"]["width"], image.height))
+    elif config["config"]["scale"]["height"] > 0:
+        image.thumbnail((image.width, config["config"]["scale"]["height"]))
     if dash.ctx.triggered_id == "card_download_current_btn":
         if current == "0":
             raise PreventUpdate
 
         row = next((r for r in data if r.get("PlayerUniqueId") == int(current)), None)
-        image = Image.open(template).convert("RGBA")
         overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
         for k, value in config.items():
             if k == "config":
@@ -1173,7 +1280,6 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
         )
     else:
         images = []
-        image = Image.open(template).convert("RGBA")
         for row in data:
             overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
             for k, value in config.items():
