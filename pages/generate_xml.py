@@ -884,6 +884,10 @@ clientside_callback(
                     "width": 0,
                     "height": 0,
                 },
+                "dpi": {
+                    "width": 72,
+                    "height": 72,
+                }
             },
             "name": {
                 "anchor": "mm",
@@ -1013,6 +1017,17 @@ clientside_callback(
                                 "height": 0,
                             }
                         },
+                        "dpi": {
+                            "type": "object",
+                            "properties": {
+                                "width": { "type": "number", "default": 72 },
+                                "height": { "type": "number", "default": 72 },
+                            },
+                            "default": {
+                                "width": 72,
+                                "height": 72,
+                            }
+                        }
                     },
                 },
                 "name": { "$ref": "#/definitions/labelBlock" },
@@ -1273,7 +1288,7 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
         image = Image.alpha_composite(image, overlay)
 
         buffered = BytesIO()
-        image.save(buffered, format="PNG")
+        image.save(buffered, format="PNG", dpi=(config["config"]["dpi"]["width"], config["config"]["dpi"]["height"]))
         return dcc.send_bytes(
             buffered.getvalue(),
             filename=f"player_card_#{row['PlayerUniqueId']}.png"
@@ -1290,7 +1305,7 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
             result = Image.alpha_composite(image, overlay)
 
             buffered = BytesIO()
-            result.save(buffered, format="PNG")
+            result.save(buffered, format="PNG", dpi=(config["config"]["dpi"]["width"], config["config"]["dpi"]["height"]))
             images.append((buffered.getvalue(), f"player_card_#{row['PlayerUniqueId']}.png"))
 
         zip_buffer = BytesIO()
