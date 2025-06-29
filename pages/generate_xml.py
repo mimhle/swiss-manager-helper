@@ -22,6 +22,7 @@ from components.table import table
 from utils import base64_to_pil, random_string, hex_to_rgb
 
 from datetime import datetime
+import random
 
 FIELDS = {
     "PlayerUniqueId": "Id",
@@ -49,6 +50,7 @@ if not os.path.exists(FONTS_FOLDER):
 
 GLOBAL_CONTEXT = {
     "datetime": datetime,
+    "random": random,
 }
 
 dash.register_page(
