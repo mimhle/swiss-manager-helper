@@ -164,6 +164,17 @@ layout = dbc.Container([
         ], label=[html.I(className="bi bi-download"), " Generate"], class_name="p-0 w-fit", id="generate_menu"),
         dbc.Button([html.I(className="bi bi-card-image"), " Generate player cards"], id="card_open_btn", n_clicks=0, color="secondary", className="w-fit"),
     ], className="flex flex-row gap-2 p-0 m-0"),
+    dbc.Accordion(
+        [
+            dbc.AccordionItem(
+                dbc.Container([
+
+                ], className="flex flex-col gap-2 p-0", id="summarize_table"),
+                title="Summarizes"
+            )
+        ],
+        start_collapsed=True,
+    ),
     dash.dcc.Download(id="download"),
     dbc.Modal(
         [
@@ -422,12 +433,13 @@ def fill_federation(n_clicks, data_group, data):
 @dash.callback(
     Output("table", "data", allow_duplicate=True),
     Output("generate_menu", "children"),
+    Output("summarize_table", "children"),
     Input("table", "data"),
     State("generate_menu", "children"),
     prevent_initial_call=True,
 )
 def change_data(data, children):
-    group = set()
+    group = dict()
 
     name_dict = dict()
     for i, row in enumerate(data):
@@ -474,7 +486,7 @@ def change_data(data, children):
     data = [row for row in data if row.get("Name", None)]
     for row in data:
         if row.get("Group", None):
-            group.add(row["Group"])
+            group[row["Group"]] = group.get(row["Group"], 0) + 1
 
     if not data:
         data = [{"": 1}]
@@ -483,7 +495,26 @@ def change_data(data, children):
 
     return data, [children[0], *[dbc.DropdownMenuItem(
         f"Generate group {name}", id={"type": "generate_group", "index": name}, n_clicks=0, className="me-1", key=name
-    ) for name in group]]
+    ) for name in group]], dash.dash_table.DataTable(
+        id="summarize_table_result",
+        columns=[
+            {"name": "Group", "id": "Group"},
+            {"name": "Count", "id": "Count"},
+        ],
+        data=[{"Group": k, "Count": v} for k, v in sorted(group.items(), key=itemgetter(0))],
+        style_cell={'textAlign': 'left'},
+        style_header={
+            'whiteSpace': 'normal',
+            'height': 'auto',
+        },
+        style_data={
+            'whiteSpace': 'normal',
+            'height': 'auto',
+        },
+        style_table={
+            "width": "fit-content",
+        },
+    )
 
 
 def generate_players_xml(data, group=None):
