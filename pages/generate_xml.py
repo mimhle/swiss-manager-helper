@@ -19,7 +19,7 @@ from mako.template import Template
 from toolz import unique
 
 from components.table import table
-from utils import base64_to_pil, random_string, hex_to_rgb
+from utils import base64_to_pil, random_string, hex_to_rgb, contains_vietnamese
 
 from datetime import datetime
 import random
@@ -141,11 +141,17 @@ layout = dbc.Container([
             "selectable": k != "PlayerUniqueId" and k != "Lastname" and k != "Firstname",
             "type": "text",
             "editable": k != "PlayerUniqueId" and k != "Lastname" and k != "Firstname",
-        } for k, v in FIELDS.items()] + [{
-            "name": "Duplicate",
-            "id": "duplicate",
-        }],
-        hidden_columns=["duplicate"],
+        } for k, v in FIELDS.items()] + [
+            {
+                "name": "Duplicate",
+                "id": "duplicate",
+            },
+            {
+                "name": "Localized",
+                "id": "localized",
+            }
+        ],
+        hidden_columns=["duplicate", "localized"],
         data=[{"": 1}],
         style_data_conditional=[
             {
@@ -153,6 +159,18 @@ layout = dbc.Container([
                     'filter_query': '{duplicate} = "true"',
                 },
                 'backgroundColor': '#f2ff0030',
+            },
+            {
+                'if': {
+                    'filter_query': '{localized} = "true"',
+                },
+                'backgroundColor': '#5fabea30',
+            },
+            {
+                'if': {
+                    'filter_query': '{duplicate} = "true" and {localized} = "true"',
+                },
+                'backgroundColor': '#aad67530',
             },
         ]
     ),
@@ -457,6 +475,9 @@ def change_data(data, children):
                 row["Lastname"], row["Firstname"] = name[0], " ".join(name[1:])
         else:
             row["Lastname"], row["Firstname"] = "", ""
+
+        if not contains_vietnamese(f"{row['Lastname']} {row['Firstname']}"):
+            row["localized"] = "true"
 
         row["duplicate"] = "false"
         if f"{row['Lastname']} {row['Firstname']}" in name_dict:

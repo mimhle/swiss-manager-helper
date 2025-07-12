@@ -71,3 +71,13 @@ def hex_to_rgb(hex_color: str) -> tuple:
     if len(hex_color) == 3:  # shorthand hex
         hex_color = ''.join([c * 2 for c in hex_color])
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def contains_vietnamese(text):
+    vietnamese_pattern = re.compile(r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễ'
+                                    r'ìíịỉĩòóọỏõôồốộổỗơờớợởỡ'
+                                    r'ùúụủũưừứựửữỳýỵỷỹđ'
+                                    r'ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄ'
+                                    r'ÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠ'
+                                    r'ÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]')
+    return bool(vietnamese_pattern.search(text))
