@@ -941,7 +941,8 @@ clientside_callback(
                 "dpi": {
                     "width": 72,
                     "height": 72,
-                }
+                },
+                "outputFormat": "png",
             },
             "name": {
                 "anchor": "mm",
@@ -1081,7 +1082,12 @@ clientside_callback(
                                 "width": 72,
                                 "height": 72,
                             }
-                        }
+                        },
+                        "outputFormat": {
+                            "type": "string",
+                            "enum": ["png", "jpeg"],
+                            "default": "png",
+                        },
                     },
                 },
                 "name": { "$ref": "#/definitions/labelBlock" },
@@ -1321,53 +1327,64 @@ def download_card(n_clicks_current, n_clicks_all, template, config, data, curren
     if not template or not config or not data:
         raise PreventUpdate
 
-    image = Image.open(template).convert("RGBA")
-    if config["config"]["scale"]["width"] > 0 and config["config"]["scale"]["height"] > 0:
-        image = image.resize((config["config"]["scale"]["width"], config["config"]["scale"]["height"]))
-    elif config["config"]["scale"]["width"] > 0:
-        image.thumbnail((config["config"]["scale"]["width"], image.height))
-    elif config["config"]["scale"]["height"] > 0:
-        image.thumbnail((image.width, config["config"]["scale"]["height"]))
-    if dash.ctx.triggered_id == "card_download_current_btn":
-        if current == "0":
+    conf = config.get("config", {})
+    scale = conf.get("scale", {}) or {}
+    dpi_cfg = conf.get("dpi", {}) or {}
+    out_format = conf.get("outputFormat", "png")
+    dpi = (int(dpi_cfg.get("width", 72)), int(dpi_cfg.get("height", 72)))
+    layers = [(k, v) for k, v in config.items() if k != "config"]
+    triggered = dash.ctx.triggered_id
+
+    with Image.open(template) as im:
+        base = im.convert("RGBA")
+
+    target_w = int(scale.get("width") or 0)
+    target_h = int(scale.get("height") or 0)
+    if target_w > 0 and target_h > 0:
+        base = base.resize((target_w, target_h), Image.LANCZOS)
+    elif target_w > 0:
+        new_h = max(1, round(base.height * (target_w / base.width)))
+        base = base.resize((target_w, new_h), Image.LANCZOS)
+    elif target_h > 0:
+        new_w = max(1, round(base.width * (target_h / base.height)))
+        base = base.resize((new_w, target_h), Image.LANCZOS)
+
+    def render_card(row):
+        overlay = Image.new("RGBA", base.size, (255, 255, 255, 0))
+        for k, value in layers:
+            overlay = draw_text(overlay, row, value, conf)
+        return Image.alpha_composite(base, overlay)
+
+    if triggered == "card_download_current_btn":
+        if not current or current == "0":
+            raise PreventUpdate
+        try:
+            current_id = int(current)
+        except (TypeError, ValueError):
             raise PreventUpdate
 
-        row = next((r for r in data if r.get("PlayerUniqueId") == int(current)), None)
-        overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
-        for k, value in config.items():
-            if k == "config":
-                continue
-            overlay = draw_text(overlay, row, value, config["config"])
+        row = next((r for r in data if int(r.get("PlayerUniqueId", -1)) == current_id), None)
+        if not row:
+            raise PreventUpdate
 
-        image = Image.alpha_composite(image, overlay)
+        result = render_card(row).convert("RGB")
+        buf = BytesIO()
+        result.save(buf, format=out_format, dpi=dpi)
+        return dcc.send_bytes(buf.getvalue(), filename=f"player_card_#{row['PlayerUniqueId']}.{out_format}")
 
-        buffered = BytesIO()
-        image.save(buffered, format="PNG", dpi=(config["config"]["dpi"]["width"], config["config"]["dpi"]["height"]))
-        return dcc.send_bytes(
-            buffered.getvalue(),
-            filename=f"player_card_#{row['PlayerUniqueId']}.png"
-        )
-    else:
-        images = []
+    zip_path = os.path.join(TEMP_FOLDER, f"player_cards_{datetime.now():%Y%m%d_%H%M%S}.zip")
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(
+            zip_path, mode="w", compression=zipfile.ZIP_STORED
+    ) as zf, zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_STORED) as zb:
         for row in data:
-            overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
-            for k, value in config.items():
-                if k == "config":
-                    continue
-                overlay = draw_text(overlay, row, value, config["config"])
+            if not row.get("PlayerUniqueId", None):
+                continue
+            card_img = render_card(row).convert("RGB")
+            out = BytesIO()
+            card_img.save(out, format=out_format, dpi=dpi)
+            zb.writestr(f"player_card_#{row['PlayerUniqueId']}.{out_format}", out.getvalue())
+            zf.writestr(f"player_card_#{row['PlayerUniqueId']}.{out_format}", out.getvalue())
+            print(f"Saved card for {row['PlayerUniqueId']} {row.get('Lastname', '')} {row.get('Firstname', '')}")
 
-            result = Image.alpha_composite(image, overlay)
-
-            buffered = BytesIO()
-            result.save(buffered, format="PNG", dpi=(config["config"]["dpi"]["width"], config["config"]["dpi"]["height"]))
-            images.append((buffered.getvalue(), f"player_card_#{row['PlayerUniqueId']}.png"))
-
-        zip_buffer = BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-            for img_data, filename in images:
-                zip_file.writestr(filename, img_data)
-
-        return dcc.send_bytes(
-            zip_buffer.getvalue(),
-            filename="player_cards.zip"
-        )
+    return dcc.send_bytes(zip_buffer.getvalue(), filename=f"player_cards_{datetime.now():%Y%m%d_%H%M%S}.zip")

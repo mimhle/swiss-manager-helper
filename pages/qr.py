@@ -73,7 +73,7 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Button("Generate", id="generate_qr", className="w-fit"),
         dbc.Button("Download", color="info", id="download_btn_qr", className="w-fit", disabled=True),
-        dbc.Button("Raw", color="info", id="raw_qr", className="w-fit", disabled=True),
+        dbc.Button("Raw", color="info", id="raw_qr", className="w-fit", disabled=True, target="_blank"),
     ], className="flex flex-row gap-2 mt-2 ml-0"),
     dcc.Download(id="download_qr"),
     dbc.Container([], className="w-full", id="qr"),
