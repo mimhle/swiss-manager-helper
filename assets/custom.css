@@ -33,3 +33,8 @@
     background-repeat: no-repeat;
     background-position: 50%;
 }
+
+#excel_upload_btn {
+    width: fit-content;
+    padding: 0;
+}

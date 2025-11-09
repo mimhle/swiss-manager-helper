@@ -59,12 +59,22 @@ dash.register_page(
 )
 
 layout = dbc.Container([
-    dcc.Upload(
-        dbc.Button([html.I(className="bi bi-box-arrow-in-down-right"), " Import from Excel"], className="w-fit"),
-        id="excel_upload_btn",
-        accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel",
-        className="w-fit",
-    ),
+    dbc.Row([
+        dcc.Upload(
+            dbc.Button([html.I(className="bi bi-box-arrow-in-down-right"), " Import from Excel"], className="w-fit"),
+            id="excel_upload_btn",
+            accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel",
+            className="!w-fit",
+        ),
+        dbc.Button(
+            [html.I(className="bi bi-arrow-clockwise"), " Restore last session"],
+            id="restore_session_btn",
+            n_clicks=0,
+            className="w-fit",
+            color="info"
+        ),
+    ], className="flex flex-row gap-2 p-0 m-0 w-full justify-between flex-nowrap"),
+    dcc.Store("client_id", storage_type='local'),
     dbc.Accordion(
         [
             dbc.AccordionItem(
@@ -319,6 +329,26 @@ def generate_name(data: dict) -> dict:
 
 @dash.callback(
     Output("table", "data", allow_duplicate=True),
+    Input("restore_session_btn", "n_clicks"),
+    State("client_id", "data"),
+    prevent_initial_call=True,
+)
+def restore_session(n_clicks, client_id):
+    if not client_id or dash.ctx.triggered_id != "restore_session_btn":
+        raise PreventUpdate
+
+    session_file = os.path.join(TEMP_FOLDER, f"session_{client_id}.json")
+    if not os.path.exists(session_file):
+        raise PreventUpdate
+
+    with open(session_file, "r", encoding="utf-8") as f:
+        data = pd.read_json(f, orient="records").to_dict(orient="records")
+
+    return data
+
+
+@dash.callback(
+    Output("table", "data", allow_duplicate=True),
     Input("clear_btn", "n_clicks"),
     prevent_initial_call=True,
 )
@@ -452,11 +482,13 @@ def fill_federation(n_clicks, data_group, data):
     Output("table", "data", allow_duplicate=True),
     Output("generate_menu", "children"),
     Output("summarize_table", "children"),
+    Output("client_id", "data"),
     Input("table", "data"),
     State("generate_menu", "children"),
+    State("client_id", "data"),
     prevent_initial_call=True,
 )
-def change_data(data, children):
+def change_data(data, children, client_id):
     group = dict()
 
     name_dict = dict()
@@ -514,6 +546,14 @@ def change_data(data, children):
     else:
         data.append({k: "" for k in FIELDS.keys()})
 
+    if len(data) == 1 and not data[0].get("Name", None):
+        pass
+    else:
+        if not client_id:
+            client_id = random_string(12)
+        with open(os.path.join(TEMP_FOLDER, f"session_{client_id}.json"), "w", encoding="utf-8") as f:
+            pd.DataFrame(data).to_json(f, orient="records", force_ascii=False, indent=4)
+
     return data, [children[0], *[dbc.DropdownMenuItem(
         f"Generate group {name}", id={"type": "generate_group", "index": name}, n_clicks=0, className="me-1", key=name
     ) for name in group]], dash.dash_table.DataTable(
@@ -535,7 +575,7 @@ def change_data(data, children):
         style_table={
             "width": "fit-content",
         },
-    )
+    ), client_id
 
 
 def generate_players_xml(data, group=None):
