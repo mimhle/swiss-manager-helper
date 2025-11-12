@@ -342,7 +342,7 @@ def restore_session(n_clicks, client_id):
         raise PreventUpdate
 
     with open(session_file, "r", encoding="utf-8") as f:
-        data = pd.read_json(f, orient="records").to_dict(orient="records")
+        data = pd.read_json(f, orient="records").fillna("").to_dict(orient="records")
 
     return data
 
