@@ -793,6 +793,8 @@ def import_excel(n_clicks, n_clicks2, data, table_data):
         else:
             del data[col]
 
+    data.fillna("", inplace=True)
+
     if dash.ctx.triggered_id == "excel_import_btn":
         data = data.to_dict('records')
     else:
