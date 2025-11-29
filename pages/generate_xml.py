@@ -1,5 +1,6 @@
 import base64
 import copy
+import json
 import os
 import re
 import xml.dom.minidom
@@ -329,22 +330,35 @@ def generate_name(data: dict) -> dict:
 
 @dash.callback(
     Output("table", "data", allow_duplicate=True),
+    Output('card_template_config', 'data', allow_duplicate=True),
+    Output("card_template_image_store", "data", allow_duplicate=True),
     Input("restore_session_btn", "n_clicks"),
+    State("table", "data"),
+    State('card_template_config', 'data'),
     State("client_id", "data"),
     prevent_initial_call=True,
 )
-def restore_session(n_clicks, client_id):
+def restore_session(n_clicks, data, card_template_config, client_id):
     if not client_id or dash.ctx.triggered_id != "restore_session_btn":
         raise PreventUpdate
 
     session_file = os.path.join(TEMP_FOLDER, f"session_{client_id}.json")
-    if not os.path.exists(session_file):
-        raise PreventUpdate
+    if os.path.exists(session_file):
+        with open(session_file, "r", encoding="utf-8") as f:
+            data = pd.read_json(f, orient="records").fillna("").to_dict(orient="records")
 
-    with open(session_file, "r", encoding="utf-8") as f:
-        data = pd.read_json(f, orient="records").fillna("").to_dict(orient="records")
+    session2_file = os.path.join(TEMP_FOLDER, f"session2_{client_id}.json")
+    if os.path.exists(session2_file):
+        with open(session2_file, "r", encoding="utf-8") as f:
+            card_template_config = json.load(f)
 
-    return data
+    template_image_file = os.path.join(TEMP_FOLDER, f"{client_id}.png")
+    if os.path.exists(template_image_file):
+        card_template_image_store = template_image_file
+    else:
+        card_template_image_store = "./static/card_template.png"
+
+    return data, card_template_config, card_template_image_store
 
 
 @dash.callback(
@@ -482,7 +496,7 @@ def fill_federation(n_clicks, data_group, data):
     Output("table", "data", allow_duplicate=True),
     Output("generate_menu", "children"),
     Output("summarize_table", "children"),
-    Output("client_id", "data"),
+    Output("client_id", "data", allow_duplicate=True),
     Input("table", "data"),
     State("generate_menu", "children"),
     State("client_id", "data"),
@@ -807,9 +821,10 @@ def import_excel(n_clicks, n_clicks2, data, table_data):
 @dash.callback(
     [
         Output("card_modal", "is_open", allow_duplicate=True),
-        Output("card_template_image_store", "data"),
+        Output("card_template_image_store", "data", allow_duplicate=True),
         Output("card_preview_select", "options"),
         Output("card_preview_select", "value"),
+        Output("client_id", "data", allow_duplicate=True),
     ],
     [
         Input("card_open_btn", "n_clicks"),
@@ -817,21 +832,25 @@ def import_excel(n_clicks, n_clicks2, data, table_data):
     ],
     [
         State("table", "data"),
+        State("card_template_image_store", "data"),
         State("card_preview_select", "value"),
+        State("client_id", "data"),
     ],
     prevent_initial_call=True,
 )
-def toggle_card_modal(n_clicks, template, data, current):
+def toggle_card_modal(n_clicks, template, data, current_template, current_selection, client_id):
     if template is None:
-        path = "./static/card_template.png"
+        path = current_template
     else:
-        path = f"{TEMP_FOLDER}/{random_string()}.png"
+        if not client_id:
+            client_id = random_string(12)
+        path = f"{TEMP_FOLDER}/{client_id}.png"
         base64_to_pil(template).save(path, format="PNG")
 
     return True, path, [{"label": "------", "value": "0"}] + [
         {"label": f"Id #{row['PlayerUniqueId']} {row['Lastname']} {row['Firstname']}", "value": row["PlayerUniqueId"]}
         for row in data if row.get("PlayerUniqueId")
-    ], "0" if dash.ctx.triggered_id == "card_open_btn" else current
+    ], ("0" if dash.ctx.triggered_id == "card_open_btn" else current_selection), client_id
 
 
 @dash.callback(
@@ -1263,13 +1282,15 @@ def draw_text(img: Image, row: dict, row_config: dict, config: dict) -> Image:
 
 @dash.callback(
     Output("card_preview_image", "src", allow_duplicate=True),
+    Output("client_id", "data", allow_duplicate=True),
     Input("card_template_image_store", "data"),
     Input("card_template_config", "data"),
     Input("card_preview_select", "value"),
     State("table", "data"),
+    State("client_id", "data"),
     prevent_initial_call=True,
 )
-def update_card_preview_image(template, config, preview, data):
+def update_card_preview_image(template, config, preview, data, client_id):
     if not template:
         raise PreventUpdate
     if not config:
@@ -1277,7 +1298,7 @@ def update_card_preview_image(template, config, preview, data):
         buffered = BytesIO()
         image.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        return f"data:image/png;base64,{img_str}"
+        return f"data:image/png;base64,{img_str}", client_id
 
     image = Image.open(template).convert("RGBA")
     if config["config"]["scale"]["width"] > 0 and config["config"]["scale"]["height"] > 0:
@@ -1348,7 +1369,13 @@ def update_card_preview_image(template, config, preview, data):
     img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     result = f"data:image/jpeg;base64,{img_str}"
 
-    return result
+    if not client_id:
+        client_id = random_string(12)
+    if template != "./static/card_template.png":
+        with open(os.path.join(TEMP_FOLDER, f"session2_{client_id}.json"), "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+
+    return result, client_id
 
 
 @dash.callback(
